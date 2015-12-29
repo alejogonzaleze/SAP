@@ -1,0 +1,360 @@
+*&---------------------------------------------------------------------*
+*&      Form  LEER_RUTA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form leer_ruta.
+
+  data  it_archivo type filetable.
+  data  v_rc type i.
+
+  call method cl_gui_frontend_services=>file_open_dialog
+    exporting
+      window_title            = 'Buscar archivo'
+      initial_directory       = 'C:\tmp'
+    changing
+      file_table              = it_archivo
+      rc                      = v_rc
+    exceptions
+      file_open_dialog_failed = 1
+      cntl_error              = 2
+      error_no_gui            = 3
+      not_supported_by_gui    = 4
+      others                  = 5.
+
+  if sy-subrc eq 0.
+    read table it_archivo index 1 into pa_arch.
+  endif.
+
+endform. "LEER_RUTA
+
+
+*&---------------------------------------------------------------------*
+*&      Form  CARGAR_EXCEL
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form cargar_excel.
+** Asignamos el nombre del archivo correspondiente
+  data: lv_archivo  type rlgrap-filename,
+        ti_raw      type truxs_t_text_data,
+        lv_error    type i,
+        ti_despacho type zwfijdespachojud occurs 0 with header line.
+
+** Generar reloj de porcentaje de ejecución.
+  data: lv_linea(20) type c,
+        lv_tabix(10) type c,
+        lv_tfill(10) type c.
+
+** Asignamos variables correspondientes.
+  lv_archivo = pa_arch.
+
+  call function 'SAPGUI_PROGRESS_INDICATOR'
+    exporting
+      percentage = 50
+      text       = 'Iniciando'.
+
+** Carga con actualización simple.
+  if pa_opc1 = 'X'.
+    call function 'TEXT_CONVERT_XLS_TO_SAP'
+      exporting
+        i_field_seperator    = 'X'
+        i_line_header        = 'X'
+        i_tab_raw_data       = ti_raw
+        i_filename           = lv_archivo
+      tables
+        i_tab_converted_data = ti_opc1[]
+      exceptions
+        conversion_failed    = 1
+        others               = 2.
+
+    if sy-subrc <> 0.
+      message e001(znemesis_002).
+*   Error al cargar el archivo desde Excel.
+    endif.
+
+    loop at ti_opc1.
+      lv_tabix = sy-tabix.
+      lv_tfill = sy-tfill.
+
+** Sentencia de actualización de tabla.
+      if   ti_opc1-fecha_rad          is initial
+        or ti_opc1-idproceso          is initial
+        or ti_opc1-numradicado        is initial.
+        ti_opc1-texto = 'Registro incompleto'.
+      endif.
+
+      if ti_opc1-texto is initial.
+
+** Formato fecha.
+        perform formato_fecha changing ti_opc1-fecha_rad.
+
+        update zwfijprocesoetap
+        set fecha_rad = ti_opc1-fecha_rad
+        where idproceso   = ti_opc1-idproceso
+        and   numradicado = ti_opc1-numradicado.
+
+        if sy-subrc = 0.
+          ti_opc1-texto = 'OK'.
+        elseif sy-subrc = 4.
+          ti_opc1-texto = 'Registro no existente.'.
+        else.
+          ti_opc1-texto = 'Error actualización.'.
+        endif.
+      endif.
+
+      condense: lv_tabix,lv_tfill.
+
+      ti_opc1-linea = lv_tabix.
+      concatenate 'Reg.' lv_tabix 'de' lv_tfill into lv_linea
+      separated by space.
+
+      call function 'SAPGUI_PROGRESS_INDICATOR'
+        exporting
+          percentage = 50
+          text       = lv_linea.
+
+
+      modify ti_opc1 index lv_tabix.
+
+** Validar líneas con error.
+      if ti_opc1-texto <> 'OK'.
+        write: / ti_opc1-linea,ti_opc1-texto.
+        lv_error = lv_error + 1.
+      endif.
+    endloop.
+  endif.
+
+  if pa_opc2 = 'X'.
+    call function 'TEXT_CONVERT_XLS_TO_SAP'
+      exporting
+        i_field_seperator    = 'X'
+        i_line_header        = 'X'
+        i_tab_raw_data       = ti_raw
+        i_filename           = lv_archivo
+      tables
+        i_tab_converted_data = ti_opc2[]
+      exceptions
+        conversion_failed    = 1
+        others               = 2.
+
+    if sy-subrc <> 0.
+      message e001(znemesis_002).
+*   Error al cargar el archivo desde Excel.
+    endif.
+
+** Cargamos despachos para validación de códigos correspondientes.
+    select *
+    into corresponding fields of table ti_despacho
+    from zwfijdespachojud.
+
+    loop at ti_opc2.
+      lv_tabix = sy-tabix.
+      lv_tfill = sy-tfill.
+
+** Sentencia de actualización de tabla primera instancia.
+      if ti_opc2-idproceso            is initial
+        or ti_opc2-numradicado        is initial
+
+        or ti_opc2-fecharadicacion_01 is initial
+        or ti_opc2-fechasentencia_01  is initial
+        or ti_opc2-idtipo_senten_01   is initial
+
+        or ti_opc2-fechasentencia_02  is initial
+        or ti_opc2-idtipo_senten_02   is initial
+        or ti_opc2-iddespacho_02      is initial
+
+        or ti_opc2-fechasentencia_03  is initial
+        or ti_opc2-idtipo_senten_03   is initial
+        or ti_opc2-iddespacho_03      is initial.
+
+        ti_opc2-texto = 'Registro incompleto'.
+      endif.
+
+** Validación de campos de despacho segunda instancia.
+      if ti_opc2-texto is initial.
+        read table ti_despacho
+        with key iddespacho = ti_opc2-iddespacho_02.
+
+        if sy-subrc <> 0.
+          ti_opc2-texto = 'Error despacho 02'.
+        endif.
+      endif.
+
+** Validación de campos de despacho tercera instancia.
+      if ti_opc2-texto is initial.
+        read table ti_despacho
+        with key iddespacho = ti_opc2-iddespacho_03.
+
+        if sy-subrc <> 0.
+          ti_opc2-texto = 'Error Despacho 03'.
+        endif.
+      endif.
+
+** Validación de campos vacíos.
+      if ti_opc2-texto is initial.
+
+        perform formato_fecha changing ti_opc2-fecharadicacion_01.
+
+        update zwfijprocesoetap
+        set fecha_rad      = ti_opc2-fecharadicacion_01
+            fecsentencia   = ti_opc2-fechasentencia_01
+            idtipo_senten  = ti_opc2-idtipo_senten_01
+        where idproceso   = ti_opc2-idproceso
+        and   numradicado = ti_opc2-numradicado
+        and   idinstancia = '01'.
+
+        if sy-subrc = 0.
+          ti_opc2-texto = 'OK'.
+        else.
+          ti_opc2-texto = 'Error instancia 01'.
+        endif.
+
+*  * Sentencia de actualización de tabla segunda instancia
+        perform formato_fecha changing ti_opc2-fechasentencia_02.
+
+        update zwfijprocesoetap
+        set fecsentencia   = ti_opc2-fechasentencia_02
+            idtipo_senten  = ti_opc2-idtipo_senten_02
+            iddespacho     = ti_opc2-iddespacho_02
+        where idproceso   = ti_opc2-idproceso
+        and   numradicado = ti_opc2-numradicado
+        and   idinstancia = '02'.
+
+        if sy-subrc = 0.
+          ti_opc2-texto = 'OK'.
+        else.
+          if ti_opc2 is initial.
+            ti_opc2-texto = 'Error instancia 02'.
+          endif.
+        endif.
+
+*  * Sentencia de actualización de tabla recurso.
+        perform formato_fecha changing ti_opc2-fechasentencia_03.
+
+        update zwfijprocesoetap
+        set fecsentencia   = ti_opc2-fechasentencia_03
+            idtipo_senten  = ti_opc2-idtipo_senten_03
+            iddespacho     = ti_opc2-iddespacho_03
+        where idproceso   = ti_opc2-idproceso
+        and   numradicado = ti_opc2-numradicado
+        and   idinstancia = '03'.
+
+        if sy-subrc = 0.
+          ti_opc2-texto = 'OK'.
+        else.
+          if ti_opc2 is initial.
+            ti_opc2-texto = 'Error instancia 03'.
+          endif.
+        endif.
+
+      endif.
+
+      condense: lv_tabix,lv_tfill.
+
+      ti_opc2-linea = lv_tabix.
+      concatenate 'Reg.' lv_tabix 'de' lv_tfill into lv_linea
+      separated by space.
+
+      call function 'SAPGUI_PROGRESS_INDICATOR'
+        exporting
+          percentage = 50
+          text       = lv_linea.
+
+      modify ti_opc2 index lv_tabix.
+
+** Validar líneas con error.
+      if ti_opc2-texto <> 'OK'.
+        write: / ti_opc2-linea,ti_opc2-texto.
+        lv_error = lv_error + 1.
+      endif.
+    endloop.
+  endif.
+
+** Carga con actualización de fechas de terminación
+  if pa_opc3 = 'X'.
+    call function 'TEXT_CONVERT_XLS_TO_SAP'
+      exporting
+        i_field_seperator    = 'X'
+        i_line_header        = 'X'
+        i_tab_raw_data       = ti_raw
+        i_filename           = lv_archivo
+      tables
+        i_tab_converted_data = ti_opc3[]
+      exceptions
+        conversion_failed    = 1
+        others               = 2.
+
+    if sy-subrc <> 0.
+      message e001(znemesis_002).
+*   Error al cargar el archivo desde Excel.
+    endif.
+
+    loop at ti_opc3.
+      lv_tabix = sy-tabix.
+      lv_tfill = sy-tfill.
+
+** Sentencia de actualización de tabla.
+      if ti_opc3-zzfectermina          is initial
+         or ti_opc3-numradicado        is initial.
+        ti_opc3-texto = 'Registro incompleto'.
+      endif.
+
+      if ti_opc3-texto is initial.
+
+** Formato fecha.
+        perform formato_fecha changing ti_opc3-zzfectermina.
+
+** Actualización de registros en tabla principal
+        update zwfijprocesoetap
+        set fecsentencia = ti_opc3-zzfectermina
+        where numradicado = ti_opc3-numradicado.
+
+        if sy-subrc = 0.
+          ti_opc3-texto = 'OK'.
+        elseif sy-subrc = 4.
+          ti_opc3-texto = 'Registro no existente.'.
+        else.
+          ti_opc3-texto = 'Error actualización.'.
+        endif.
+      endif.
+
+      condense: lv_tabix,lv_tfill.
+
+      ti_opc3-linea = lv_tabix.
+      concatenate 'Reg.' lv_tabix 'de' lv_tfill into lv_linea
+      separated by space.
+
+      call function 'SAPGUI_PROGRESS_INDICATOR'
+        exporting
+          percentage = 50
+          text       = lv_linea.
+
+
+      modify ti_opc3 index lv_tabix.
+
+** Validar líneas con error.
+      if ti_opc3-texto <> 'OK'.
+        write: / ti_opc3-linea,ti_opc3-texto.
+        lv_error = lv_error + 1.
+      endif.
+    endloop.
+  endif.
+
+  write /.
+  write: / 'Total líneas con error:', lv_error.
+endform.                    "CARGAR_EXCEL
+*&---------------------------------------------------------------------*
+*&      Form  FORMATO_FECHA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      <--P_TI_OPC1_FECHA_RAD  text
+*----------------------------------------------------------------------*
+form formato_fecha changing p_fecha.
+
+  data: lv_fecha(8) type c.
+  concatenate p_fecha+6(4) p_fecha+3(2) p_fecha(2) into lv_fecha.
+  p_fecha = lv_fecha.
+
+endform.                    " FORMATO_FECHA
