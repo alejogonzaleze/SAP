@@ -1,0 +1,1005 @@
+
+report zrppscdre0002 line-size 132 line-count 65 no standard page heading.
+
+*=============================================================================================
+*            CALCULO DE INTERESES DE MORA PARA ARRENDAMIENTOS
+*
+* DESCRIPCION: Reporte que se desarrolla para las rentas 14 (Ingresos no tributarios)
+*              y 19 (Arrendamientos). El programa identifica los contribuyentes que
+*              no cancelaron una factura de arrendamiento hasta la fecha máxima de pago.
+*
+*              La base para el cálculo de los intereses serán Todas las partidas facturadas
+*              a cada arrendatario pendientes de pago (abiertas) a la fecha de corte para
+*              la liquidación de intereses, registradas en SAP como canon fijado en los
+*              contratos de arrendamientos de bienes inmuebles del Municipio de Medellín.
+
+include zrppscdre0002_top.    " global Data
+
+*-----------------------------------------------------------------------------------------------*
+*  DISEÑO PANTALLA DE SELECCION
+*-----------------------------------------------------------------------------------------------*
+selection-screen begin of block blk01 with frame title text-001.
+* Fecha ejecución
+*SELECT-OPTIONS: so_datum  FOR sy-datum NO-EXTENSION." NO INTERVALS." DEFAULT sy-datum.
+parameters:     pa_datum  type sy-datum,
+                "Fecha de contabilización.
+                pa_conta  type sy-datum.
+*	NIT o cedula (Rango)
+select-options: so_gpart  for dfkkop-gpart. " NO INTERVALS.
+*	Tipo de cuenta contrato (Ocultar mediante variante)
+select-options: so_vktyp  for dfkkop-vktyp_ps. " NO INTERVALS.
+*	Op.Principal (Ocultar mediante variante)
+select-options: so_hvorg  for tfktvo-hvorg." NO INTERVALS.
+*	Op.secundaria (Ocultar mediante variante)
+select-options: so_tvorg  for tfktvo-tvorg." NO INTERVALS.
+* Clase de documentos a tener en cuenta
+select-options: so_blart  for dfkkop-blart.
+* Motivo de compensación
+select-options: so_augrd  for dfkkop-augrd.
+selection-screen end   of block blk01.
+
+
+selection-screen begin of block blk02 with frame title text-002.
+parameters:       pa_test type c as checkbox default 'X'.   " Indicador TEST
+selection-screen end   of block blk02.
+
+
+*--------------------------------------------------------------------------------------------------*
+*                 INICIALIZACION
+*--------------------------------------------------------------------------------------------------*
+* En la inicializacion del reporte se llenan los valores de los parametros
+* de selección que deben ir por defecto
+initialization.
+  perform inicialization.
+
+*-------------------------------------------------------------------------------------------------*
+*                 INICIO DE SELECCION DE DATOS
+*-------------------------------------------------------------------------------------------------*
+start-of-selection.
+
+  if pa_datum > sy-datum.
+    message i000(zpscd_predial) with '' 'Fecha corte asignada no válida.'.
+    return.
+  endif.
+
+  if pa_conta > sy-datum.
+    message i000(zpscd_predial) with '' 'Fecha contabilización asignada no válida.'.
+    return.
+  endif.
+
+* Se crea el objeto log donde se almacenaran los mensajes
+  clear ti_return.
+  create object vg_log
+    exporting
+      i_s_object = 'ZPSCD_0003'
+      i_es_syst  = sy.
+
+  perform obtener_facturas  changing ti_fkkop.
+  if ti_fkkop is not initial.
+    perform procesar_facturas changing ti_fkkop.
+  endif.
+
+
+*-------------------------------------------------------------------------------------------------*
+*                 FIN DE SELECCION DE DATOS
+*-------------------------------------------------------------------------------------------------*
+***END-OF-SELECTION.
+**** Debe verificarse que la búsqueda de la información en las bases de datos fue
+**** exitosa. Si esto no fuera así, deberá terminarse el programa enviando un mensaje
+**** al usuario, para que revise la selección efectuada
+***  DESCRIBE TABLE ti_fkkop LINES sy-index.
+***  IF sy-index IS INITIAL.
+***    MESSAGE s001(z1).
+***    EXIT.
+***
+***  ENDIF.
+***
+**** En esta sección debe codificarse la parte del proceso referida a la generación
+**** de la salida, ya sea un reporte, un call transaction o alguna otra funcionalidad.
+**** Debe tratar de agruparse el código en subrutinas.
+***  PERFORM display_alv USING ti_fkkop.
+
+end-of-selection.
+* Si se han presentado mensajes y no se esta ejecutando en fondo, se muestra el log
+  if ti_return is not initial.
+    vg_log->save( i_ti_log_tab = ti_return ).
+    if sy-batch is initial.
+      vg_log->display( ).
+    endif.
+  endif.
+
+*----------------------------------------------------------------------------------------------*
+*                 SUBRUTINAS INTERNAS
+*----------------------------------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*&      Form  INICIALIZATION
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form inicialization.
+
+* Este desarrollo funcionará por defecto para las rentas 14 (Ingresos no tributarios)
+* y 19 (Arrendamientos).
+  so_vktyp-low = '14'.
+  so_vktyp-high = ''.
+  so_vktyp-option = 'EQ'.
+  so_vktyp-sign = 'I'.
+  append so_vktyp.
+
+  so_vktyp-low = '19'.
+  so_vktyp-high = ''.
+  so_vktyp-option = 'EQ'.
+  so_vktyp-sign = 'I'.
+  append so_vktyp.
+
+* La operación principal por defecto es la 4032
+  so_hvorg-low = '4032'.
+  so_hvorg-high = ''.
+  so_hvorg-option = 'EQ'.
+  so_hvorg-sign = 'I'.
+  append so_hvorg.
+
+* La Clase de Documento por defecto es la DR (Facturas)
+  so_blart-low = 'DR'.
+  so_blart-high = ''.
+  so_blart-option = 'EQ'.
+  so_blart-sign = 'I'.
+  append so_blart.
+
+* Los motivos de compensación (AUGRD) que se deben tener en cuente son los diferentes a
+* 04, 05, 06 y 14 para que no se tengan en cuenta los cancelados y anulados.
+  so_augrd-low = '04'.
+  so_augrd-high = '06'.
+  so_augrd-option = 'BT'.
+  so_augrd-sign = 'E'.
+  append so_augrd.
+*  so_augrd-low = '05'.
+*  so_augrd-high = ''.
+*  so_augrd-option = 'EQ'.
+*  so_augrd-sign = 'E'.
+*  APPEND so_augrd.
+*  so_augrd-low = '06'.
+*  so_augrd-high = ''.
+*  so_augrd-option = 'EQ'.
+*  so_augrd-sign = 'E'.
+*  APPEND so_augrd.
+  so_augrd-low = '14'.
+  so_augrd-high = ''.
+  so_augrd-option = 'EQ'.
+  so_augrd-sign = 'E'.
+  append so_augrd.
+
+
+* Fecha de ejecución
+***  so_datum-low = '19000101'.
+***  so_datum-high = sy-datum.
+***  so_datum-option = 'BT'.
+***  so_datum-sign = 'I'.
+***  APPEND so_datum.
+  pa_datum = sy-datum.
+  pa_conta = sy-datum.
+
+***  so_gpart-low = '71708944'.
+***  so_gpart-high = ''.
+***  so_gpart-option = 'EQ'.
+***  so_gpart-sign = 'I'.
+***  APPEND so_gpart.
+***
+***  so_gpart-low = '43204830'.
+***  so_gpart-high = ''.
+***  so_gpart-option = 'EQ'.
+***  so_gpart-sign = 'I'.
+***  APPEND so_gpart.
+
+endform.                    " INICIALIZATION
+
+
+*&---------------------------------------------------------------------*
+*&      Form  OBTENER_FACTURAS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form obtener_facturas  changing pt_fkkop  type ty_ti_fkkop.
+
+  data: ti_datum        type range of sy-datum,
+        wa_datum        like line of ti_datum,
+        ti_fkkop        type ty_ti_fkkop,
+        wa_fkkop        like line of pt_fkkop,
+        wa_fkkop_tmp    like line of pt_fkkop,
+        vl_num_regs(4)  type n,
+        vl_msg          type string.
+
+*  wa_datum-low = '19000101'.
+*  wa_datum-high = pa_datum.
+*  wa_datum-option = 'BT'.
+*  wa_datum-sign = 'I'.
+*  append wa_datum to ti_datum.
+
+* Se deben identificar los contribuyentes que no hayan cancelado una factura de arrendamiento
+* hasta la fecha máxima de pago. Para esto se deben consultar la tabla DFKKOP con el PARTNER
+* y la operación principal (HVORG) sea 4032, utilizando el MF FKK_BP_LINE_ITEMS_SELECT se
+* pueden obtener estos registros.
+  call function 'FKK_BP_LINE_ITEMS_SELECT'
+    exporting
+      i_augst        = ''
+      ix_augst       = 'X'
+      i_clear_table  = 'X'
+    importing
+      e_count        = vg_count
+    tables
+      pt_fkkop       = ti_fkkop
+      tp_gpart_range = so_gpart
+      tp_faedn_range = ti_datum
+      tp_hvorg_range = so_hvorg.
+
+* Se filtran valores correspondientes a campos borrador.
+  ti_fkkop_borr[] = ti_fkkop[].
+* Se deben eliminar de la tabla interna los registros que:
+* •	Tengan op.parcial diferentes a los parametros
+  delete ti_fkkop where tvorg not in so_tvorg.
+* •	Tengan Clase documento diferente a DR (Facturas).
+  delete ti_fkkop where blart not in so_blart. " 'DR'.
+* •	Tengan motivo de compensación (AUGRD) diferente a 04, 05, 06 y 14 para que no se
+*   tengan en cuenta los cancelados y anulados.
+  delete ti_fkkop where augrd not in so_augrd.
+* •	El valor sea menor o igual a cero
+  delete ti_fkkop where betrw le 0.
+
+** pa_datum: valor fin de la deuda (fecha de cálculo para intereses).
+  select *
+  into table ti_intereses
+  from t056p
+  where referenz = 'IPC_INDEXA'.
+
+*& Se deben recorrer los registros de la tabla interna. Solo se debe procesar los registros que:
+*& -  No esten compensados o
+*& -  Este compensados pero tengan la fecha de compensación mayor a la fecha de vencimiento
+*&    (AUGVD > FAEDN) para que se tengan en cuenta los registros que se pagaron despues de
+*&    la fecha de corte. O que la fecha de compensación sea inicial o vacia.
+  loop at ti_fkkop into wa_fkkop.
+    if ( wa_fkkop-augst is initial ) or ( wa_fkkop-augvd > wa_fkkop-faedn ).
+***      wa_fkkop_tmp-opbel = wa_fkkop-opbel.
+***      wa_fkkop_tmp-opupk = '0001'.
+***      wa_fkkop_tmp-xblnr = wa_fkkop-xblnr.
+
+      call function 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        exporting
+          input  = wa_fkkop-xblnr
+        importing
+          output = wa_fkkop_tmp-opbel.
+
+      wa_fkkop_tmp-opupk = '0001'.
+      wa_fkkop_tmp-betrw = wa_fkkop-betrw.
+      wa_fkkop_tmp-waers = wa_fkkop-waers.
+      wa_fkkop_tmp-applk = wa_fkkop-applk.
+      wa_fkkop_tmp-blart = wa_fkkop-blart.
+      wa_fkkop_tmp-bukrs = wa_fkkop-bukrs.
+      wa_fkkop_tmp-gsber = wa_fkkop-gsber.
+      wa_fkkop_tmp-gpart = wa_fkkop-gpart.
+      wa_fkkop_tmp-vkont = wa_fkkop-vkont.
+      wa_fkkop_tmp-applk = wa_fkkop-applk.
+      wa_fkkop_tmp-faedn = wa_fkkop-faedn.
+      wa_fkkop_tmp-faedn = wa_fkkop-faedn.
+      wa_fkkop_tmp-xblnr = wa_fkkop-xblnr.
+      wa_fkkop_tmp-tvorg = wa_fkkop-tvorg.
+      collect wa_fkkop_tmp into pt_fkkop.
+    endif.
+  endloop.
+
+  vl_num_regs = lines( pt_fkkop ).
+  if vl_num_regs gt 0.
+    concatenate 'Se han encontrado' vl_num_regs 'registros a procesar'
+                into vl_msg separated by space.
+    vg_log->add_msg_str( exporting i_c_msgty   = 'S'       i_s_msg = vl_msg
+                         changing  c_ti_return = ti_return ).
+  else.
+    vl_msg = 'No se han encontrado registros'.
+    vg_log->add_msg_str( exporting i_c_msgty   = 'S'       i_s_msg = vl_msg
+                         changing  c_ti_return = ti_return ).
+  endif.
+
+endform.                    " OBTENER_FACTURAS
+
+
+*&----------------------------------------------------------------------*
+*& Descripción : Metodo que despliega un ALV sencillo util para pruebas *
+*&----------------------------------------------------------------------*
+form display_alv using ch_data type any table .
+
+  data: lo_alv          type ref to cl_salv_table,
+        lo_display      type ref to cl_salv_display_settings,
+        lo_layout       type ref to cl_salv_layout,
+        lo_functions    type ref to cl_salv_functions,
+        wa_lay_key      type salv_s_layout_key,
+        lv_tittle       type lvc_title.
+
+  try.
+      call method cl_salv_table=>factory
+        importing
+          r_salv_table = lo_alv
+        changing
+          t_table      = ch_data.
+
+*     Configura opciones de visualizacion (zebra)
+      lo_display = lo_alv->get_display_settings( ).
+      lo_display->set_striped_pattern( cl_salv_display_settings=>true ).
+      lo_display->set_list_header( lv_tittle ).
+
+*     Activa el status estandar del ALV con todas sus funciones
+      lo_functions = lo_alv->get_functions( ).
+      lo_functions->set_all( 'X' ).
+
+*     Configura el Layout del ALV, si se tiene alguno por defecto se adopta este
+      lo_layout = lo_alv->get_layout( ).
+      wa_lay_key-report = sy-repid.
+      lo_layout->set_key( wa_lay_key ).
+      lo_layout->set_save_restriction( 1 ).
+      lo_layout->set_default( 'X' ).
+
+      lo_alv->display( ).
+    catch cx_salv_msg.                                  "#EC NO_HANDLER
+  endtry.
+
+endform.                    "display_alv
+
+
+*&---------------------------------------------------------------------*
+*&      Form  CALCULAR_INTERESES
+*&---------------------------------------------------------------------*
+*& Calculo del interés de mora:
+*& La base para el cálculo de los intereses serán Todas las partidas facturadas a cada arrendatario
+*& pendientes de pago (abiertas) a la fecha de corte para la liquidación de intereses, registradas
+*& en SAP como canon fijado en los contratos de arrendamientos de bienes inmuebles del Municipio
+*& de Medellín.
+*&----------------------------------------------------------------------*
+form calcular_intereses  using    ps_fkkop    type ty_fkkop
+                                  pv_date     type sy-datum
+                         changing pv_valor    type fkkop-betrw
+                                  pv_valint   type fkkop-betrw
+                                  pv_correcto type c.
+
+  data: vl_val_deuda    type fkkop-betrw,
+        vl_val_interes  type p decimals 6,
+        vl_int_mensual  type t056p-zsoll,
+
+** Variables para cálculo de valores para IPC.
+        vl_ipc_inicial  type t056p-zsoll,
+        vl_ipc_actual   type t056p-zsoll,
+        vl_fec_inicio   type char10,
+        vl_fec_fin      type char10,
+        vl_fec_inicio1  type sy-datum,
+        vl_fec_fin1     type sy-datum,
+
+        vl_fec_invi     type datab_inv,
+        vl_fec_inva     type datab_inv,
+
+        vl_ipc          type fkkop-betrw,
+        vl_int_civil    type fkkop-betrw,
+        ti_int_civil    type standard table of ztabint,
+        wa_int_civil    like line of ti_int_civil,
+        wa_fkkop        type ty_fkkop,
+        vl_tmp(15)      type c,
+        vl_msg          type string,
+        vl_ipc_fin      type sy-datum.
+
+  data: lv_month type i,
+        lv_year  type i,
+        lv_calc  type i,
+        lv_inicio type sy-datum.
+
+  constants: cv_mont1 type i value -1.
+
+** Estructura para almacenar valores de intereses asociados.
+  vl_val_deuda = pv_valor.
+  write pv_valor to vl_tmp currency ps_fkkop-waers.
+  shift vl_tmp left deleting leading space.
+  concatenate 'Inicia calculo intereses de documento' ps_fkkop-opbel 'por valor de' vl_tmp
+              into vl_msg separated by space.
+  vg_log->add_msg_str( exporting i_c_msgty   = 'S'       i_s_msg = vl_msg
+                       changing  c_ti_return = ti_return ).
+
+** AGONZALEZ INICIO MODIFICACIÓN IPC VALOR ADICIONADO A DEUDA.
+
+** Calculamos los meses del IPC hasta la vigencia correspondiente
+** acumulada (31.12 del último año antes del año anterior).
+  call function 'RP_CALC_DATE_IN_INTERVAL'
+    exporting
+      date      = sy-datum
+      days      = 0
+      months    = 0
+      signum    = '-'
+      years     = 1
+    importing
+      calc_date = vl_ipc_fin.
+
+  concatenate vl_ipc_fin(4) '1231' into vl_ipc_fin.
+
+  perform get_interes using    'IPC'    vl_ipc_fin    'X'
+                      changing          vl_val_interes.
+
+** Validamos los documentos existentes en la factura y traemos el documento correspondiente
+** en la fecha de vencimiento para las claves seleccionadas.
+  ti_fkkop_inter[] = ti_fkkop_borr[].
+  sort ti_fkkop_inter by tvorg.
+  delete ti_fkkop_inter where tvorg <> '0500'.
+  sort ti_fkkop_inter by xblnr.
+  delete ti_fkkop_inter where xblnr <> ps_fkkop-xblnr.
+
+** Lectura de información desde la DFKKOP para las referencias
+** existentes de las facturas de los clientes para documentos
+** que hacen referencia a intereses.
+** Se selecciona el documento más nuevo para tomarlo como referencia
+** de fecha de vencimiento (el documento con la fecha de vencimiento mayor).
+  sort ti_fkkop_inter by faedn descending.
+  read table ti_fkkop_inter into wa_fkkop_inter index 1.
+
+** Modificación para validar
+** si no hay datos, se lee la fecha de vencimiento del documento
+** si hay datos, se lee la referencia del último interés (fecha de última generación de intereses).
+  if sy-subrc <> 0.
+    lv_inicio = pv_date.
+  else.
+    lv_inicio = wa_fkkop_inter-faedn.
+  endif.
+
+** Se capturan las fechas iniciales correspondientes para
+** buscar los índices a utilizar para el cálculo del porcentaje.
+*  concatenate '01.' lv_inicio+4(2) '.' lv_inicio(4) into vl_fec_inicio.
+*  concatenate '01.' pa_datum+4(2)  '.' pa_datum(4)  into vl_fec_fin.
+
+  concatenate lv_inicio(4) lv_inicio+4(2) '01' into vl_fec_inicio1.
+  concatenate pa_datum(4)  pa_datum+4(2) '01'  into vl_fec_fin1.
+
+** Corrección IPC INDEXA: Se resta un mes a la fecha actual capturada, para captura de tasa correcta.
+  call function 'BKK_ADD_MONTH_TO_DATE'
+    exporting
+      months  = cv_mont1
+      olddate = vl_fec_inicio1
+    importing
+      newdate = vl_fec_inicio1.
+
+  call function 'BKK_ADD_MONTH_TO_DATE'
+    exporting
+      months  = cv_mont1
+      olddate = vl_fec_fin1
+    importing
+      newdate = vl_fec_fin1.
+
+  concatenate vl_fec_inicio1+6(2) '.' vl_fec_inicio1+4(2) '.' vl_fec_inicio1(4) into vl_fec_inicio.
+  concatenate vl_fec_fin1+6(2)    '.' vl_fec_fin1+4(2)    '.' vl_fec_fin1(4)    into vl_fec_fin.
+
+** Búsqueda de fecha invertida en el proceso.
+  call function 'CONVERSION_EXIT_INVDT_INPUT'
+    exporting
+      input  = vl_fec_inicio
+    importing
+      output = vl_fec_invi.
+
+  call function 'CONVERSION_EXIT_INVDT_INPUT'
+    exporting
+      input  = vl_fec_fin
+    importing
+      output = vl_fec_inva.
+
+** Lectura de fecha de inicio en tabla IPC_INDEXA.
+  read table ti_intereses with key datab = vl_fec_invi.
+  if sy-subrc = 0.
+    vl_ipc_inicial = ti_intereses-zsoll.
+  else.
+    concatenate 'Fecha ' vl_fec_inicio ' no encontrada en t056p.' into vl_msg separated by space.
+    message vl_msg type 'E'.
+  endif.
+
+** Lectura de fecha fin en tabla IPC_INDEXA.
+  read table ti_intereses with key datab = vl_fec_inva.
+  if sy-subrc = 0.
+    vl_ipc_actual = ti_intereses-zsoll.
+  else.
+    concatenate 'Fecha ' vl_fec_fin ' no encontrada en t056p.' into vl_msg separated by space.
+    message vl_msg type 'E'.
+  endif.
+
+**  Tomamos como referencia el valor de la deuda
+**  y calculamos el valor del índice de acuerdo a lo establecido por el usuario.
+** (I.P.C. actual-I.P.C inicia)/I.P.C. actual
+  vl_ipc = ( vl_ipc_actual - vl_ipc_inicial ) / vl_ipc_actual.
+  vl_ipc = vl_val_deuda * vl_ipc.
+
+** Se suma el valor del incremento porcentual al valor de la deuda actual.
+  vl_val_deuda = vl_val_deuda + vl_ipc.
+
+** Se actualiza el valor base del mes asociado al cálculo.
+
+  ps_fkkop-betrw = vl_val_deuda.
+  write vl_val_deuda to vl_tmp currency ps_fkkop-waers.
+  shift vl_tmp left deleting leading space.
+
+** Valor base para deuda en documento a crear.
+  clear vg_base.
+  vg_base = vl_tmp.
+
+  concatenate 'El valor base para deuda es de:' vl_tmp
+              into vl_msg separated by space.
+  vg_log->add_msg_str( exporting i_c_msgty   = 'S'       i_s_msg = vl_msg
+                       changing  c_ti_return = ti_return ).
+
+
+** AGONZALEZ FIN MODIFICACIÓN.
+
+*& 1. Se obtiene la Tasa de Interés Civil Anual (6.0%) que se encuentra almacenado en la tabla
+*&    T056P, pero se puede acceder por medio de la vista V_T056P
+  perform get_interes using    'INT_CIVIL'     pa_datum   space
+                      changing vl_int_civil.
+
+  write vl_int_civil to vl_tmp decimals 2.
+  shift vl_tmp left deleting leading space.
+  concatenate 'El valor del Interes Civil es de' vl_tmp
+              into vl_msg separated by space.
+  vg_log->add_msg_str( exporting i_c_msgty   = 'S'       i_s_msg = vl_msg
+                       changing  c_ti_return = ti_return ).
+
+*& 2. Se calcula el porcentaje de interes mensual ya que la periodicidad del cobro de los
+*&    intereses de mora, será mensual.
+  vl_int_mensual = ( ( vl_int_civil * 2 ) / 12 ).
+
+*& 3. Una vez actualizada la Base (Deuda + Indexación con el IPC), Se calcularan los interés por
+*&    mora aplicando el doble de la tasa de interés Civil. (Tasa de Interés Civil 6.0 % anual),
+*&    en caso de que se trate de una anualidad completa, o el valor que corresponda de manera
+*&    proporcional según el tiempo que lleve en mora.
+  vl_val_interes = ( vl_val_deuda * vl_int_mensual ) / 100.
+
+** AGONZALEZ: ARANDA 61274. Multiplicación de los valores de intereses por el número de meses
+** con los que se calcula los intereses correspondientes.
+** Se calcula el vl_val_interes por el número de meses que se encuentre vencido desde la fecha
+** de vencimiento correspondiente hasta la fecha actual.
+
+  call function 'HR_AUPBS_MONTH_DAY'
+    exporting
+      beg_da           = lv_inicio
+      end_da           = pa_datum
+    importing
+*     NO_DAY           =
+      no_month         = lv_month
+      no_year          = lv_year
+*     NO_CAL_DAY       =
+            .
+
+** Cálculo de años por el número de meses (12) + meses de la función.
+  lv_calc = lv_year * 12 + lv_month.
+
+** Si los meses son negativos se llevan a cero.
+  if lv_calc < 0.
+    lv_calc = 0.
+  endif.
+
+** Se multiplica el valor del interés calculado por el número de meses.
+  vl_val_interes =  vl_val_interes * lv_calc.
+  pv_valint = vl_val_interes.
+  pv_valor  = vl_val_deuda.
+
+** Si el número de meses para intereses es cero, se marca como no correcto.
+** y se muestra que no se generan intereses.
+  if pv_valint = 0.
+    pv_correcto = ''.
+    shift vl_tmp left deleting leading space.
+    vl_msg = 'No se generan intereses para documento.'.
+    vg_log->add_msg_str( exporting i_c_msgty   = 'W'       i_s_msg = vl_msg
+                         changing  c_ti_return = ti_return ).
+
+  else.
+** Actualizamos valor interes con PV_VALINT con la moneda correspondiente.
+    pv_correcto = 'X'.
+    write pv_valint to vl_tmp currency ps_fkkop-waers.
+    shift vl_tmp left deleting leading space.
+    concatenate 'El valor interés del documento a crear es de' vl_tmp into vl_msg separated by space.
+    vg_log->add_msg_str( exporting i_c_msgty   = 'S'       i_s_msg = vl_msg
+                         changing  c_ti_return = ti_return ).
+
+  endif.
+endform.                    " CALCULAR_INTERESES
+
+*&---------------------------------------------------------------------*
+*&      Form  ACTUALIZAR_DEUDA
+*&---------------------------------------------------------------------*
+*& Esta rutina permite realizar la actualización de la Deuda al ejercicio actual.
+*& Antes de Calcular los intereses de mora, se debe realizar la actualización (indexación)
+*& de la Base con el IPC del año inmediatamente anterior para toda la anualidad completa,
+*& o el valor que corresponda de manera proporcional según el tiempo que lleve en mora.
+*&
+*& Una vez actualizada la Base (Deuda + Indexación con el IPC), Se calcularan los interés por
+*& mora aplicando el doble de la tasa de interés Civil. (Tasa de Interés Civil 6.0 % anual),
+*& en caso de que se trate de una anualidad completa, o el valor que corresponda de manera
+*& proporcional según el tiempo que lleve en mora.
+*&
+*& El resultado de esta rutina es el valor presente de la deuda segun el IPC.
+*&---------------------------------------------------------------------*
+form actualizar_deuda  using    pv_init   type c
+                       changing ps_fkkop  type ty_fkkop
+                                pv_deuda  type fkkop-betrw
+                                pv_date   type sy-datum.
+
+  data: vl_val_deuda    type fkkop-betrw,
+        vl_val_interes  type fkkop-betrw,
+        vl_int_mensual  type fkkop-betrw, " t056p-zsoll,
+        vl_meses        type i.
+
+  vl_val_deuda = ps_fkkop-betrw.
+
+  if ps_fkkop-faedn(4) le pv_date(4).
+    perform get_interes using    'IPC'    ps_fkkop-faedn    'X'
+                        changing vl_val_interes.
+
+*   Si es la ejecucion del primer año, se debe actualizar segun el numero de meses
+    if pv_init is not initial.
+      vl_meses = 12 - ps_fkkop-faedn+4(2).
+      vl_int_mensual = ( vl_val_deuda * vl_val_interes ) / 100.
+      vl_int_mensual = ( vl_int_mensual * vl_meses ) / 12.
+      vl_val_deuda = vl_val_deuda + vl_int_mensual.
+*   Sino se actualiza para todo el año
+    else.
+      vl_val_deuda = vl_val_deuda + ( vl_val_deuda * vl_val_interes ) / 100.
+    endif.
+    ps_fkkop-faedn(4) = ps_fkkop-faedn(4) + 1.
+    ps_fkkop-betrw    = vl_val_deuda.
+    perform actualizar_deuda using ''
+                             changing ps_fkkop  vl_val_deuda  pv_date.
+  endif.
+
+  pv_deuda = vl_val_deuda.
+
+endform.                    " ACTUALIZAR_DEUDA
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_INTERES
+*&---------------------------------------------------------------------*
+*& Rutina que obtiene la Tasa de Interés del tipo de interese enviado
+*& como parametro y que se encuentra almacenado en la tabla T056P.
+*----------------------------------------------------------------------*
+form get_interes  using    pv_tpint   type referenz
+                           pv_date    type datum
+                           pv_inyear  type c
+                  changing pv_valor .
+
+  data: vl_val_deuda    type fkkop-betrw,
+        vl_val_interes  type fkkop-betrw,
+        vl_date_inv1    type datab_inv,
+        vl_date_inv2    type datab_inv,
+        vl_date1        type char10,  "datum,
+        vl_date2        type char10,  "datum,
+        ti_int_civil    type standard table of ztabint,
+        wa_int_civil    like line of ti_int_civil.
+
+  clear pv_valor.
+
+  if pv_inyear is initial.
+    write pv_date to vl_date1.
+*   Se convierte la fecha recibida al formato de fecha invertida
+    call function 'CONVERSION_EXIT_INVDT_INPUT'
+      exporting
+        input  = vl_date1
+      importing
+        output = vl_date_inv1.
+
+*   Se obtienen todas las tasas que se encuentren creadas en la tabla para el
+*   tipo de interes y que sean menores a la fecha enviada
+*    SELECT * FROM ztabint INTO TABLE ti_int_civil
+*      WHERE referenz EQ pv_tpint
+*      AND   datab    LT vl_date_inv1.
+
+**********************************************************************************************
+** AGONZALEZ: Modificación de lectura de parámetro de fecha de forma invertida.             **
+**            al estar invertida, se buscan las fechas mayores a la fecha del parámetro.    **
+**            ya que al buscar las menores (partiendo de la referencia) no se encontraban   **
+**            valores referentes.                                                           **
+**********************************************************************************************
+
+    select * from ztabint into table ti_int_civil
+      where referenz = pv_tpint
+      and   datab    >= vl_date_inv1.
+
+**********************************************************************************************
+** Fin Modificación **************************************************************************
+**********************************************************************************************
+
+  else.
+    concatenate '01.01.' pv_date(4) into vl_date1.
+*   Se convierte la fecha recibida al formato de fecha invertida
+    call function 'CONVERSION_EXIT_INVDT_INPUT'
+      exporting
+        input  = vl_date1
+      importing
+        output = vl_date_inv1.
+
+    concatenate '31.12.' pv_date(4) into vl_date2.
+*   Se convierte la fecha recibida al formato de fecha invertida
+    call function 'CONVERSION_EXIT_INVDT_INPUT'
+      exporting
+        input  = vl_date2
+      importing
+        output = vl_date_inv2.
+
+*   Se obtienen todas las tasas que se encuentren creadas en la tabla para el
+*   tipo de interes y que sean menores a la fecha enviada
+    select * from ztabint into table ti_int_civil
+      where referenz eq pv_tpint
+      and   datab    between vl_date_inv2 and vl_date_inv1.
+
+  endif.
+
+
+* De los registros obtenidos, se procede a obtener el mas reciente (segun la
+* fecha de inicio de validez).
+  sort ti_int_civil by datab ascending.
+  read table ti_int_civil into wa_int_civil index 1.
+  if sy-subrc eq 0.
+    pv_valor = wa_int_civil-zsoll.
+  endif.
+
+endform.                    " GET_INTERES
+
+
+*&---------------------------------------------------------------------*
+*&      Form  PROCESAR_FACTURAS
+*&---------------------------------------------------------------------*
+*&  Rutina que recibe como parametro una tabla interna de facturas,
+*&  recorre estas facturas y crea un documento contable por cada una
+*&  de las facturas que no hayan sido pagadas o que se hayan pagado
+*&  despues de la fecha de vencimiento.
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form procesar_facturas changing pt_fkkop  type ty_ti_fkkop.
+
+  data: wa_fkkop      like line of ti_fkkop,
+        vl_valor      type fkkop-betrw,
+        vl_interes    type fkkop-betrw,
+        vl_fikey      type dfkksumc-fikey,
+        vl_val_deuda  type fkkop-betrw,
+        vl_val_ini    type fkkop-betrw,
+        vl_date       type datum,
+        vl_correcto   type c.
+
+  field-symbols: <fs_fkkop> like line of pt_fkkop.
+
+  vl_date = pa_datum.
+*& Se crea la clave de contabilización que se usará para todos los documentos contables
+  perform crear_clave changing vl_fikey.
+
+*& Se deben recorrer los registros de la tabla interna. Solo se debe procesar los registros que:
+*& -  No esten compensados o
+*& -  Este compensados pero tengan la fecha de compensación mayor a la fecha de vencimiento
+*&    (AUGVD > FAEDN) para que se tengan en cuenta los registros que se pagaron despues de
+*&    la fecha de corte. O que la fecha de compensación sea inicial o vacia.
+  loop at pt_fkkop assigning <fs_fkkop>.
+    wa_fkkop = <fs_fkkop>.
+*&  Calculo del interés de mora:
+*&    La base para el cálculo de los intereses serán Todas las partidas facturadas a cada
+*&    arrendatario pendientes de pago (abiertas) a la fecha de corte para la liquidación
+*&    de intereses, registradas en SAP como canon fijado en los contratos de arrendamientos
+*&    de bienes inmuebles del Municipio de Medellín.
+    vl_val_deuda = wa_fkkop-betrw.
+    vl_date      = wa_fkkop-faedn.
+    vl_correcto  = ''.
+
+    perform calcular_intereses using    wa_fkkop      vl_date
+                               changing vl_val_deuda  vl_interes vl_correcto.
+
+***    WRITE vl_interes TO <fs_fkkop>-vtre2 CURRENCY <fs_fkkop>-waers.
+*&  Creacion de documento contable
+    <fs_fkkop>-betrw = vl_interes.
+    <fs_fkkop>-hvorg = '4032'.    " hvorg = '0040'.
+    <fs_fkkop>-tvorg = '0500'.    " tvorg = '0020'.
+
+    if vl_correcto = 'X'.
+      perform crear_documento    using <fs_fkkop> vl_fikey.
+    endif.
+  endloop.
+
+endform.                    " PROCESAR_FACTURAS
+
+
+*&---------------------------------------------------------------------*
+*&      Form  crear_clave
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form crear_clave changing pv_fikey type dfkksumc-fikey.
+
+  data: vl_open_on_request      type xfeld,
+        vl_open_without_dialog  type xfeld,
+        vl_msg                  type string.
+
+  concatenate 'AR' sy-datum+2(2) sy-datum+4(2) sy-datum+6(2) sy-uzeit(4) into pv_fikey.
+
+  vl_open_on_request = ''.
+  vl_open_without_dialog = 'X'.
+
+  call function 'FKK_FIKEY_CHECK'
+    exporting
+      i_fikey               = pv_fikey
+      i_open_on_request     = vl_open_on_request
+      i_open_without_dialog = vl_open_without_dialog
+    exceptions
+      non_existing          = 1
+      others                = 2.
+  if sy-subrc <> 0.
+    vg_log->add_message( exporting i_c_msgty     = sy-msgty
+                                   i_c_msgid     = sy-msgid
+                                   i_n_msgno     = sy-msgno
+                                   i_c_msgv1     = sy-msgv1
+                                   i_c_msgv2     = sy-msgv2
+                                   i_c_msgv3     = sy-msgv3
+                                   i_c_msgv4     = sy-msgv4
+                         changing  c_ti_return   = ti_return ).
+    message id sy-msgid type 'W' number sy-msgno
+            with sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    exit.
+  else.
+    commit work.
+    concatenate 'Se crea la clave de contabilización' pv_fikey into vl_msg separated by space.
+    vg_log->add_msg_str( exporting i_c_msgty   = 'S'       i_s_msg = vl_msg
+                         changing  c_ti_return = ti_return ).
+  endif.
+
+endform.                    " crear_clave
+
+*&---------------------------------------------------------------------*
+*&      Form  crear_documento
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->PS_FKKOP   text
+*      -->PV_FIKEY   text
+*----------------------------------------------------------------------*
+form   crear_documento   using ps_fkkop  type ty_fkkop
+                               pv_fikey  type dfkksumc-fikey.
+
+  data: vl_amount_external  type bapicurr-bapicurr,
+        vl_opbel            type dfkkop-opbel,
+        vl_grkey            type zfica_claves_agr-grkey,
+        vl_text_optxt       type optxt_kk,
+        vl_mes              type char10.
+  data: vl_documentnumber   type bapidfkkko-doc_no,
+        wa_return           type bapiret2,
+        vl_msg              type string.
+
+  clear wa_documentheader.
+  refresh ti_partnerpositions[].
+  clear wa_partnerpositions.
+
+  call function 'CONVERSION_EXIT_ALPHA_INPUT'
+    exporting
+      input  = ps_fkkop-xblnr
+    importing
+      output = vl_opbel.
+
+** Adición de texto interés mora arrendamiento.
+  vl_text_optxt = 'INTERES MORA ARRENDAM.'.
+  concatenate vl_text_optxt pa_datum+4(2) '/' pa_datum(4) into vl_text_optxt.
+
+  call function 'BAPI_CURRENCY_CONV_TO_EXTERNAL'
+    exporting
+      currency        = ps_fkkop-waers
+      amount_internal = ps_fkkop-betrw
+    importing
+      amount_external = vl_amount_external.
+
+  ps_fkkop-betrw = vl_amount_external.
+  wa_documentheader-appl_area      = ps_fkkop-applk.
+  wa_documentheader-doc_type       = ps_fkkop-blart.
+  wa_documentheader-doc_source_key = '01'.
+  wa_documentheader-currency       = ps_fkkop-waers.
+  wa_documentheader-doc_date       = sy-datum.
+  wa_documentheader-post_date      = pa_conta.
+  wa_documentheader-ref_doc_no     = vl_opbel.
+  wa_documentheader-fikey          = pv_fikey.
+  wa_documentheader-single_doc     = 'X'.
+  select single grkey into vl_grkey
+    from   zfica_claves_agr
+    where  hvorg = ps_fkkop-hvorg and tvorg = ps_fkkop-tvorg.
+  if sy-subrc <> 0.
+    message s052(ztrm).
+    vg_log->add_message( exporting i_c_msgty   = 'S'   i_c_msgid   = 'ZTRM'   i_n_msgno   = 052
+                         changing  c_ti_return = ti_return ).
+  endif.
+  wa_partnerpositions-item             = '0001'.
+  wa_partnerpositions-comp_code        = ps_fkkop-bukrs.
+  wa_partnerpositions-bus_area         = ps_fkkop-gsber.
+  wa_partnerpositions-buspartner       = ps_fkkop-gpart.
+  wa_partnerpositions-cont_acct        = ps_fkkop-vkont.
+  wa_partnerpositions-appl_area        = ps_fkkop-applk.
+  wa_partnerpositions-main_trans       = ps_fkkop-hvorg.
+  wa_partnerpositions-sub_trans        = ps_fkkop-tvorg.
+  wa_partnerpositions-grouping         = vl_grkey.
+  wa_partnerpositions-doc_date         = sy-datum.
+  wa_partnerpositions-post_date        = pa_conta.
+  wa_partnerpositions-text             = vl_text_optxt.
+  wa_partnerpositions-net_date         = pa_datum.
+  wa_partnerpositions-currency         = ps_fkkop-waers.
+  wa_partnerpositions-amount_loc_curr  = ps_fkkop-betrw.
+  wa_partnerpositions-amount           = ps_fkkop-betrw.
+  wa_partnerpositions-fisc_year        = sy-datum(4).
+  wa_partnerpositions-ref_doc_no       = ps_fkkop-opbel.
+  wa_partnerpositions-fm_orig_area     = ps_fkkop-origfikrs.
+  append wa_partnerpositions to ti_partnerpositions.
+
+  call function 'BAPI_CTRACDOCUMENT_CREATE'
+    exporting
+      testrun          = pa_test
+      completedocument = 'X'
+      documentheader   = wa_documentheader
+    importing
+      documentnumber   = vl_documentnumber
+      return           = wa_return
+    tables
+      partnerpositions = ti_partnerpositions.
+  if wa_return is initial and wa_return-type <> 'E'.
+***    pv_subrc = 0.
+    call function 'BAPI_TRANSACTION_COMMIT'
+      exporting
+        wait = 'X'.
+    message s018(ztrm) with 'Se ha generado el Documento No.'  vl_documentnumber.
+    concatenate 'Se ha generado el Documento No.'  vl_documentnumber into vl_msg separated by space.
+    vg_log->add_msg_str( exporting i_c_msgty   = 'S'       i_s_msg = vl_msg
+                         changing  c_ti_return = ti_return ).
+
+** Creación de texto para primera posición.
+    data: vl_head type thead,
+          vl_line type tline occurs 0 with header line.
+
+** Insertamos textos de cabecera asociados.
+    clear vl_head.
+    vl_head-tdobject   = 'FKKKO'.
+    vl_head-tdname     = vl_documentnumber.
+    vl_head-tdid       = 'FKK0'.
+    vl_head-tdspras    = sy-langu.
+    vl_head-tdform     = 'SYSTEM'.
+    vl_head-tdlinesize = 132.
+
+    clear vl_line.
+    refresh vl_line.
+
+** Insertamos línea asociada al texto correspondiente.
+    vl_line-tdformat = '*'.
+    condense vl_line-tdline.
+    concatenate 'El valor base para deuda es de:' vg_base into vl_line-tdline separated by space.
+    append vl_line.
+
+    call function 'SAVE_TEXT'
+      exporting
+        client          = sy-mandt
+        header          = vl_head
+        savemode_direct = 'X'
+      tables
+        lines           = vl_line.
+    if sy-subrc <> 0.
+      message 'No se ha creado correctamente el texto de cabecera' type 'E'.
+    endif.
+  else.
+***    pv_subrc = 8.
+    call function 'BAPI_TRANSACTION_ROLLBACK'.
+    vg_log->add_message( exporting i_c_msgty     = sy-msgty
+                                   i_c_msgid     = sy-msgid
+                                   i_n_msgno     = sy-msgno
+                                   i_c_msgv1     = sy-msgv1
+                                   i_c_msgv2     = sy-msgv2
+                                   i_c_msgv3     = sy-msgv3
+                                   i_c_msgv4     = sy-msgv4
+                         changing  c_ti_return   = ti_return ).
+    message id sy-msgid type 'S' number sy-msgno
+            with sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  endif.
+
+endform.                    "crear_documento
