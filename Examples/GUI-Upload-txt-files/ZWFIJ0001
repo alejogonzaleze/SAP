@@ -1,0 +1,72 @@
+*&---------------------------------------------------------------------*
+*& Report  ZWFIJ0001
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+
+REPORT  ZWFIJ0001.
+data: ti_juzgados TYPE STANDARD TABLE OF ZWFIJDESPACHOMIG with header line,
+      begin of ti_lineajuz occurs 0,
+        juzgado(12) type c,
+        nombre(90) type c,
+      end of ti_lineajuz.
+
+PARAMETERS: P_FILE TYPE STRING OBLIGATORY.
+
+
+CALL FUNCTION 'GUI_UPLOAD'
+  EXPORTING
+    FILENAME                      = P_FILE
+*   FILETYPE                      = 'ASC'
+   HAS_FIELD_SEPARATOR           = 'X'
+*   HEADER_LENGTH                 = 0
+*   READ_BY_LINE                  = 'X'
+*   DAT_MODE                      = ' '
+*   CODEPAGE                      = ' '
+*   IGNORE_CERR                   = ABAP_TRUE
+*   REPLACEMENT                   = '#'
+*   CHECK_BOM                     = ' '
+*   VIRUS_SCAN_PROFILE            =
+*   NO_AUTH_CHECK                 = ' '
+* IMPORTING
+*   FILELENGTH                    =
+*   HEADER                        =
+  TABLES
+    DATA_TAB                      = ti_lineajuz
+ EXCEPTIONS
+   FILE_OPEN_ERROR               = 1
+   FILE_READ_ERROR               = 2
+   NO_BATCH                      = 3
+   GUI_REFUSE_FILETRANSFER       = 4
+   INVALID_TYPE                  = 5
+   NO_AUTHORITY                  = 6
+   UNKNOWN_ERROR                 = 7
+   BAD_DATA_FORMAT               = 8
+   HEADER_NOT_ALLOWED            = 9
+   SEPARATOR_NOT_ALLOWED         = 10
+   HEADER_TOO_LONG               = 11
+   UNKNOWN_DP_ERROR              = 12
+   ACCESS_DENIED                 = 13
+   DP_OUT_OF_MEMORY              = 14
+   DISK_FULL                     = 15
+   DP_TIMEOUT                    = 16
+   OTHERS                        = 17
+          .
+IF SY-SUBRC <> 0.
+ MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+         WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+ENDIF.
+DELETE FROM ZWFIJDESPACHOMIG.
+
+LOOP AT ti_lineajuz.
+  ti_juzgados-IDDESPACHO = ti_lineajuz-juzgado.
+  ti_juzgados-NOMDESPACHO = ti_lineajuz-nombre.
+  ti_juzgados-IDDEPARTAMENTO = ti_lineajuz-juzgado+0(2).
+  ti_juzgados-IDCIUDAD = ti_lineajuz-juzgado+2(3).
+  ti_juzgados-IDJURISDICCION = ti_lineajuz-juzgado+5(4).
+  append ti_juzgados.
+ENDLOOP.
+modify ZWFIJDESPACHOMIG from table ti_juzgados.
+COMMIT WORK.
