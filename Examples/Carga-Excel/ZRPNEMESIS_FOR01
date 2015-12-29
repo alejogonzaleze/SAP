@@ -1,0 +1,84 @@
+*&-------------------------------------------------------------------------------------------------------------
+*&  Include           ZRPNEMESIS_FOR01
+*--------------------------------------------------------------------------------------------------------------
+* LOG DE MODIFICACION:
+*--------------------------------------------------------------------------------------------------------------
+* FECHA 08/10/2013
+* PROGRAMADOR: ALEJANDRO GONZALEZ ESTRADA
+* CORRECCION:  DEVK9A13JF
+* DESCRIPCION: DESARROLLO INICIAL.
+*--------------------------------------------------------------------------------------------------------------
+* FECHA 05/10/2015
+* PROGRAMADOR: ALEJANDRO GONZALEZ ESTRADA
+* CORRECCION:  DEVK9A13JF
+* ARANDA:      3189
+* DESCRIPCION: Adición de método para crear registros terminados (fecha nueva).
+*--------------------------------------------------------------------------------------------------------------
+* FECHA 23/10/2015
+* PROGRAMADOR: ALEJANDRO GONZALEZ ESTRADA
+* CORRECCION:  DEVK9A1ET4
+* ARANDA:      3189
+* DESCRIPCION: Reajuste campo de carga y eliminación campo nuevo.
+*--------------------------------------------------------------------------------------------------------------
+
+** Tipos de datos
+  types truxs_t_text_data(4096) type c occurs 0.
+
+** Estructuras para carga de archivos.
+  data: begin of r_opc1,
+      idproceso(12),
+      numradicado(23),
+      fecha_rad(10),
+      texto(50),
+      linea(10),
+  end of r_opc1.
+
+** Estructuras para carga de archivos 2.
+  data: begin of r_opc2,
+      idproceso(12),
+      numradicado(23),
+** 01. Primera instancia.
+      fecharadicacion_01(10),
+      fechasentencia_01(10),
+      idtipo_senten_01(2),
+** 02. Segunda Instancia.
+      fechasentencia_02(10),
+      idtipo_senten_02(10),
+      iddespacho_02(12),
+** 03. Fecha recurso
+      fechasentencia_03(10),
+      idtipo_senten_03(2),
+      iddespacho_03(12),
+** 04. Textos adicionales de control.
+      texto(50),
+      linea(10),
+  end of r_opc2.
+
+** Estructuras para carga de archivos fecha
+  data: begin of r_opc3,
+      numradicado(23),
+      zzfectermina(10),
+      texto(50),
+      linea(10),
+  end of r_opc3.
+
+** Tabla interna para carga de información Opción 1.
+  data: ti_opc1 like r_opc1 occurs 0 with header line,
+        ti_opc2 like r_opc2 occurs 0 with header line,
+        ti_opc3 like r_opc3 occurs 0 with header line.
+
+** Pantalla de selección de parámetros del reporte.
+  selection-screen begin of block blk01 with frame title text-001.
+  parameters: pa_arch type string obligatory.
+  selection-screen end of block blk01.
+
+  selection-screen begin of block blk02 with frame title text-002.
+  parameters: pa_opc1 type c radiobutton group sel,
+              pa_opc2 type c radiobutton group sel,
+              pa_opc3 type c radiobutton group sel.
+  selection-screen end of block blk02.
+
+  at selection-screen on value-request for pa_arch.
+    perform leer_ruta.
+
+  end-of-selection.
