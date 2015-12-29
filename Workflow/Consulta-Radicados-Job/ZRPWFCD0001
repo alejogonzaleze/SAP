@@ -1,0 +1,90 @@
+REPORT  zrpwfcd0001.
+*==============================================================================*
+*            PROGRAMA PARA SER EJECUTADO EN JOB DE FRECUENCIA DIARIA           *
+*==============================================================================*
+* Fecha              : 30/06/2009                                              *
+* Cliente            : Municipio de Medellín                                   *
+* Nombre del Programa: ZRPWFCD0001                                             *
+* Autor              : Juan Rafael Cardona Z. - Consultor SAP Business Workflow*
+* Empresa            : Consultoría Organizacional                              *
+* Módulo             : PM/CS                                                   *
+* Versión SAP        : ECC 6.0                                                 *
+* Descripción        :                                                         *
+* 1. Envío de notificación respecto a la fecha de creación de avisos de Control*
+* Disciplinario (clase de aviso A1).  Avisos que hayan sido creados hace 2     *
+* meses y que todavía estén con el estatus de usuario RADI (Radicado).         *
+* 2. Envío de notificación para avisos de Control Disciplinario con estatus de *
+* usuario activo INDA (Indagación preliminas) y cuya aprobación del auto       *
+* correspondiente se haya realizado hace 3 y 4 meses.                          *
+* 3. Envío de notificación para avisos de Control Disciplinario con estatus de *
+* usuario activo INVE (Investigación disciplinaria) y cuya aprobación del auto *
+* correspondiente se haya realizado hace 3 y 4 meses.                          *
+* 4. Envío de notificación para avisos de Control Disciplinario a los 45 y 75  *
+* días hábiles contados a partir de la fecha de notificación del auto de Pliego*
+* de cargos (estatus de usuario CARG).                                         *
+*                                                                              *
+* Se lanza el evento ZWENotificacionesCD que inicia el workflow WS91000069     *
+* (Notificaciones Control Disciplinario).                                      *
+*==============================================================================*
+*==============================================================================*
+*                            LOG DE MODIFICACIÓN                               *
+*==============================================================================*
+* FECHA:       DD/MM/AAAA                                                      *
+* PROGRAMADOR:                                                                 *
+* CORRECCION:                                                                  *
+* DESCRIPCION:                                                                 *
+*==============================================================================*
+*==============================================================================*
+*                                 INCLUDES                                     *
+*==============================================================================*
+INCLUDE <cntn01>.
+INCLUDE zrpwfcd0001_top.
+INCLUDE zrpwfcd0001_f01.
+*==============================================================================*
+*                       PARÁMETROS DE SELECCIÓN                                *
+*==============================================================================*
+* Como este es un programa que debe correr en fondo, la idea es que los parámetros
+* de selección se utilicen solo en las pruebas.
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+PARAMETERS: pa_fecha LIKE sy-datum, " Fecha de la consulta
+            pa_noti1 AS CHECKBOX,  " Avisos con estatus RADI
+            pa_noti2 AS CHECKBOX,  " Avisos con estatus INDA
+            pa_noti3 AS CHECKBOX,  " Avisos con estatus INVE
+            pa_noti4 AS CHECKBOX.  " Avisos con estatus CARG
+SELECTION-SCREEN END OF BLOCK b1.
+*==============================================================================*
+START-OF-SELECTION.
+  break jrcardona.
+  IF NOT pa_fecha IS INITIAL.
+    vg_fecha = pa_fecha.
+  ENDIF.
+  IF sy-batch EQ 'X'.
+*   Notificación para avisos creados hace 2 meses y con estatus de usuario RADI
+    PERFORM f_notif_avisos_radi.
+
+*   Notificación para avisos con estatus de usuario INDA aprobado hace 3 y 4 meses
+    PERFORM f_notif_avisos_inda.
+
+*   Notificación para avisos con estatus de usuario INVE aprobado hace 3 y 4 meses
+    PERFORM f_notif_avisos_inve.
+
+*   Notificación para avisos con fecha de notificación del pliego de cargos a 45 y 75 días
+    PERFORM f_notif_avisos_carg.
+  ELSE.
+    IF pa_noti1 EQ 'X'.
+*     Notificación para avisos creados hace 2 meses y con estatus de usuario RADI
+      PERFORM f_notif_avisos_radi.
+    ENDIF.
+    IF pa_noti2 EQ 'X'.
+*     Notificación para avisos con estatus de usuario INDA aprobado hace 3 y 4 meses
+      PERFORM f_notif_avisos_inda.
+    ENDIF.
+    IF pa_noti3 EQ 'X'.
+*     Notificación para avisos con estatus de usuario INVE aprobado hace 3 y 4 meses
+      PERFORM f_notif_avisos_inve.
+    ENDIF.
+    IF pa_noti4 EQ 'X'.
+*     Notificación para avisos con fecha de notificación del pliego de cargos a 45 y 75 días
+      PERFORM f_notif_avisos_carg.
+    ENDIF.
+  ENDIF.
