@@ -4,26 +4,8 @@
 * DESCRIPCION: Se requiere crear programa y transacción que permita la anulación de las     *
 *              declaraciones ReteICA no pagadas en el plazo definido.                       *
 *===========================================================================================*
-* ANALISTA:    Diego Hernán Gómez Jaramillo.                                                *
 * PROGRAMADOR: Alejandro González Estrada.                                                  *
 *===========================================================================================*
-
-*--------------------------------------------------------------------------------------------
-* LOG DE MODIFICACION
-*--------------------------------------------------------------------------------------------
-* FECHA           14/10/2015
-* PROGRAMADOR     Alejandro González Estrada
-* CORRECCION      DEVK9A1FCI
-* DESCRIPCION     Versión inicial del programa.
-* ARANDA          3471
-*--------------------------------------------------------------------------------------------
-
-*********************************************************************************************
-** NOTA AUTHORITY-CHECK                                                                    **
-*********************************************************************************************
-** No es necesario AUTHORITY-CHECK debido a que las autorizaciones                         **
-** del programa se controlan a través de la transacción asociada.                          **
-*********************************************************************************************
 
 report  zicad_rp_anulaciones_reteica line-size 220.
 
