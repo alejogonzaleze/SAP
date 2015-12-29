@@ -1,0 +1,3619 @@
+*----------------------------------------------------------------------*
+***INCLUDE ZRPPRCI_PROYECTO_FNC .
+*----------------------------------------------------------------------*
+*& DESCRIPCION: PROYECTOS DE CIUDAD.
+*&
+*& LIDER    : Mónica Isabel Gómez Montoya.
+*& CONSULTOR: Alejandro González Estrada.
+*& FECHA    : 09-07-2014
+*&---------------------------------------------------------------------*
+*& LOG DE MODIFICACION:
+*&---------------------------------------------------------------------*
+* FECHA           09-07-2014
+* PROGRAMADOR     Alejandro González Estrada
+* CORRECCION      DEVK9A17UU
+* DESCRIPCION     Primera versión del programa.
+*&---------------------------------------------------------------------*
+* FECHA           10/21/2015
+* PROGRAMADOR     ALEJANDRO GONZALEZ ESTRADA
+* CORRECCION      DEVK9A17WZ
+* ARANDA          3540
+* DESCRIPCION     Adición campos proyectos de ciudad: indicadores,
+*                 tipos de contratos, tipos intervención.
+*&---------------------------------------------------------------------*
+* FECHA           05/11/2015
+* PROGRAMADOR     ALEJANDRO GONZALEZ ESTRADA
+* CORRECCION      DEVK9A1EZ1
+* ARANDA          4115
+* DESCRIPCION     Corrección de dump en consulta.
+*&---------------------------------------------------------------------*
+* FECHA           21/12/2015
+* PROGRAMADOR     Jorge Ivan Gaviria
+* CORRECCION      DEVK9A1FLQ
+* ARANDA          4868
+* DESCRIPCION     Corrección de dump en division.
+*&---------------------------------------------------------------------*
+
+
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_0100  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module status_0100 output.
+  set pf-status ''.
+  set titlebar 'ZTGPRCI_TITULO2'.
+endmodule.                 " STATUS_0100  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  BUSCAR_REGISTROS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form buscar_registros .
+
+  data: lv_cond(1024) type c,
+        lv_comilla type c,
+        ti_cond like table of lv_cond.
+
+  refresh ti_cond.
+  concatenate space '''' into lv_comilla.
+  condense lv_comilla no-gaps.
+
+
+** Código del consecutivo del proyecto.
+  if lv_codigo is not initial.
+    replace all occurrences of lv_comilla in lv_codigo with ''.
+    concatenate 'CODIGO = ''' lv_codigo '''' into lv_cond.
+    append lv_cond to ti_cond.
+  endif.
+
+** Código del proyecto.
+  if lv_proyecto is not initial.
+    replace all occurrences of lv_comilla in lv_proyecto with ''.
+
+    if ti_cond[] is not initial.
+      concatenate 'AND PROYECTO = ''' lv_proyecto '''' into lv_cond.
+      append lv_cond to ti_cond.
+    else.
+      concatenate 'PROYECTO = ''' lv_proyecto '''' into lv_cond.
+      append lv_cond to ti_cond.
+    endif.
+  endif.
+
+** Nombre del proyecto
+  if lv_nombrepr is not initial.
+    replace all occurrences of lv_comilla in lv_nombrepr with ''.
+    translate lv_nombrepr to upper case.
+
+    if ti_cond[] is not initial.
+      concatenate 'AND NOMBRE LIKE ''%' lv_nombrepr '%''' into lv_cond.
+      append lv_cond to ti_cond.
+    else.
+      concatenate 'NOMBRE LIKE ''%' lv_nombrepr '%''' into lv_cond.
+      append lv_cond to ti_cond.
+    endif.
+  endif.
+
+** Código de vicealcaldía
+  if lv_vicecod is not initial.
+    replace all occurrences of lv_comilla in lv_vicecod with ''.
+
+    if ti_cond[] is not initial.
+      concatenate 'AND VICEALCALDIA = ''' lv_vicecod '''' into lv_cond.
+      append lv_cond to ti_cond.
+    else.
+      concatenate 'VICEALCALDIA = ''' lv_vicecod '''' into lv_cond.
+      append lv_cond to ti_cond.
+    endif.
+  endif.
+
+** Validación de rol para fondo medellín.
+  data: ti_rol type ztprci_rol occurs 0 with header line,
+        ti_perfil type ztprci_perfil occurs 0 with header line,
+        lv_tipopr_rol(3) type c,
+        lv_tipopr_consulta(1024) type c.
+
+  select *
+  into corresponding fields of table ti_perfil
+  from ztprci_perfil
+  where usuario = sy-uname.
+
+  if sy-subrc <> 0.
+    message e021(zproyciu).
+    leave screen.
+*   No tiene perfiles configurados.
+  endif.
+
+** Validamos permisos para roles administrador.
+  read table ti_perfil with key codigo = 'ADM'.
+** Validamos roles para perfil de lectura.
+  if sy-subrc <> 0.
+    read table ti_perfil with key codigo = 'LEC'.
+** Validamos roles para perfiles específicos, se listan solo los que
+** tienen autorizaciones, búsqueda específica de registros.
+    if sy-subrc <> 0.
+      loop at ti_perfil.
+        lv_tipopr_rol = ti_perfil-codigo+1(2).
+
+        if lv_tipopr_consulta is not initial.
+          concatenate lv_tipopr_consulta
+                      ' OR TIPOPR = '''
+                      lv_tipopr_rol ''''
+                      into lv_tipopr_consulta.
+        else.
+          concatenate 'TIPOPR = '''
+                      lv_tipopr_rol ''''
+                      into lv_tipopr_consulta.
+        endif.
+      endloop.
+
+      if ti_cond[] is not initial.
+        concatenate ' AND (' lv_tipopr_consulta ')' into lv_cond.
+        append lv_cond to ti_cond.
+      else.
+        lv_cond = lv_tipopr_consulta.
+        append lv_cond to ti_cond.
+      endif.
+
+    endif.
+  endif.
+
+  select  codigo
+          proyecto
+          posicion
+          nombre
+          vicealcaldia
+  into corresponding fields of table ti_busqueda
+  from ztprci_proyecto
+  where (ti_cond).
+
+
+  loop at ti_busqueda.
+    call function 'CONVERSION_EXIT_ALPHA_INPUT'
+      exporting
+        input  = ti_busqueda-posicion
+      importing
+        output = ti_busqueda-posicion.
+
+    modify ti_busqueda index sy-tabix.
+  endloop.
+
+  if ti_cond[] is not initial.
+    sort ti_busqueda by proyecto posicion.
+  else.
+    sort ti_busqueda by codigo.
+  endif.
+
+endform.                    " BUSCAR_REGISTROS
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0100  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module user_command_0100 input.
+
+  case sy-ucomm.
+    when 'ZADD'.
+      perform refrescar_campos.
+      perform crear_nuevo_proyecto.
+      call screen 0200.
+    when 'ZBOR'.
+      perform borrar_proyecto.
+      perform buscar_registros.
+    when 'ZBUSCAR' or space.
+      perform buscar_registros.
+    when 'ZLIMP'.
+      perform limpiar_casillas.
+    when 'ZCONS'.
+      perform listar_registros.
+    when 'BACK' or '%EX' or 'RW'.
+      perform salir.
+  endcase.
+
+  clear sy-ucomm.
+
+endmodule.                 " USER_COMMAND_0100  INPUT
+*&---------------------------------------------------------------------*
+*&      Form  LIMPIAR_CASILLAS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form limpiar_casillas .
+
+  clear: lv_nombrepr,
+         lv_codigo,
+         lv_proyecto.
+
+endform.                    " LIMPIAR_CASILLAS
+*&---------------------------------------------------------------------*
+*&      Form  LISTAR_REGISTROS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form listar_registros .
+
+  data: lv_tabix type sy-tabix.
+  read table ti_busqueda with key sel = 'X'.
+
+** Si se encuentra algún registro seleccionado.
+  if sy-subrc = 0.
+** Consulta registros de proyecto.
+    select single *
+    into corresponding fields of wa_proyecto
+    from ztprci_proyecto
+    where codigo = ti_busqueda-codigo.
+
+** Corección de valor de moneda.
+    if sy-subrc = 0.
+      perform convertir_moneda using 'E' wa_proyecto-moneda changing wa_proyecto-inversion_prog.
+      perform convertir_moneda using 'E' wa_proyecto-moneda changing wa_proyecto-inversion_ejec.
+      perform convertir_moneda using 'E' wa_proyecto-moneda changing wa_proyecto-recursosmp.
+      perform convertir_moneda using 'E' wa_proyecto-moneda changing wa_proyecto-recursosof.
+      perform convertir_moneda using 'E' wa_proyecto-moneda changing wa_proyecto-recursosdesf.
+    endif.
+
+** Consulta registros de tipo de compromiso.
+    select tip~codigo tip~descripcion
+    into corresponding fields of table ti_tipo
+    from ztprci_tipo as tip inner join ztprci_protipoc as pti
+         on pti~tipoc = tip~codigo
+    where pti~proyecto = ti_busqueda-codigo.
+
+** Consulta registros de tipo de compromiso.
+    select tip~codigo tip~descripcion
+    into corresponding fields of table ti_tipoint
+    from ztprci_tipoint as tip inner join ztprci_protipoin as pti
+         on pti~tipoin = tip~codigo
+    where pti~proyecto = ti_busqueda-codigo.
+
+** Consulta registros de comuna.
+    select com~codigo com~descripcion
+    into corresponding fields of table ti_comuna
+    from ztprci_comuna as com inner join ztprci_procomu as pco
+         on pco~comuna = com~codigo
+    where pco~proyecto = ti_busqueda-codigo.
+
+** Consulta registros de recursos.
+    select *
+    into corresponding fields of table ti_recursos
+    from ztprci_recursos
+    where proyecto = wa_proyecto-codigo.
+
+** Consulta de registros de etapa.
+    select *
+    into corresponding fields of table ti_etapa
+    from ztprci_proyetap
+    where proyecto = wa_proyecto-codigo.
+
+** Consulta registros de población.
+    select *
+    into corresponding fields of table ti_poblacion
+    from ztprci_poblacion
+    where proyecto = wa_proyecto-codigo.
+
+** Consulta registros de proyectos blandos.
+    select *
+    into corresponding fields of table ti_pblandos
+    from ztprci_pblandos
+    where proyecto = wa_proyecto-codigo.
+
+** Consulta registros de contratos.
+    select *
+    into corresponding fields of table ti_contrato
+    from ztprci_procontra
+    where proyecto = wa_proyecto-codigo.
+
+** Consulta registros de indicadores.
+    select *
+    into corresponding fields of table ti_indicador
+    from ztprci_proind
+    where proyecto = wa_proyecto-codigo.
+
+** Conversión de monedas para proyectos blandos.
+    loop at ti_pblandos.
+      lv_tabix = sy-tabix.
+      perform convertir_moneda using 'E' wa_proyecto-moneda
+                         changing  ti_pblandos-pbinversion.
+
+      modify ti_pblandos index lv_tabix.
+    endloop.
+
+** Valor de moneda por defecto.
+    if wa_proyecto-moneda is initial.
+      wa_proyecto-moneda = 'COP'.
+    endif.
+
+** Cargar las posiciones de las validaciones.
+    perform cargar_estados_posiciones .
+
+** Consulta de parámetros tabla TVARVC.
+    select * into table
+    gt_tvarvc
+    from tvarvc
+    where name like 'ZPRCIU_%'.
+
+** Asociación de valores para modificaciones en log.
+    wa_proyecto_ini = wa_proyecto.
+    ti_recursos_ini[] = ti_recursos[].
+    call screen 0200.
+  endif.
+
+endform.                    " LISTAR_REGISTROS
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_0110  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module status_0110 output.
+*  SET PF-STATUS 'xxxxxxxx'.
+*  SET TITLEBAR 'xxx'.
+
+endmodule.                 " STATUS_0110  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Module  CREATE_LIST  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module create_list output.
+
+  if ref_cont is initial.
+** Instancia de objeto cont
+    create object ref_cont
+      exporting
+        container_name = 'OBJ_COORD'.
+
+** Instancia de objeto HTML
+    create object ref_html
+      exporting
+        parent = ref_cont.
+  endif.
+
+  if lv_control_map is initial.
+    perform cargar_coordenadas using wa_proyecto-coordx
+                                     wa_proyecto-coordy
+                                     wa_proyecto-direccion
+                                     wa_proyecto-codigo.
+    lv_control_map = 'X'.
+  endif.
+
+endmodule.                 " CREATE_LIST  OUTPUT
+
+*----------------------------------------------------------------------*
+*  MODULE create_radicado OUTPUT
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+module create_radicado output.
+
+endmodule.                 " CREATE_LIST  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  INSERTAR
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_0179   text
+*----------------------------------------------------------------------*
+form insertar  using p_valor.
+  clear wa_html.
+  wa_html = p_valor.
+  append wa_html to ti_html.
+endform.                    " INSERTAR
+*&---------------------------------------------------------------------*
+*&      Form  SALIR
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form salir .
+  leave program.
+endform.                    " SALIR
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0200  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module user_command_0200 input.
+
+  data: lv_subrc type sy-subrc.
+
+  case sy-ucomm.
+    when 'BACK'.
+      clear: sy-ucomm,
+             lv_control_map.
+      refresh g_mytable.
+      leave to screen 0.
+    when '%EX' or 'RW'.
+      clear sy-ucomm.
+      perform salir_advertencia.
+    when 'ZGUARD'.
+** Validaciones de registros.
+      clear lv_subrc.
+      perform validar_roles.
+      perform cargar_estados_posiciones.
+      perform validaciones_registros changing lv_subrc.
+** Valores de subrc.
+      if lv_subrc <> 0.
+        return.
+      endif.
+** Mostramos ventana log.
+      perform ventana_log.
+  endcase.
+endmodule.                 " USER_COMMAND_0200  INPUT
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_0200  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module status_0200 output.
+  set pf-status 'ZSGPRCI_PRINCIPAL'.
+  set titlebar 'ZTGPRCI_TITULO' with wa_proyecto-codigo wa_proyecto-proyecto.
+endmodule.                 " STATUS_0200  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  SALIR_ADVERTENCIA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form salir_advertencia .
+
+  data: lv_respuesta type c.
+
+  call function 'POPUP_TO_CONFIRM'
+    exporting
+      titlebar                    = 'Salir'
+*     DIAGNOSE_OBJECT             = ' '
+      text_question               = '¿Está seguro de salir del programa?'
+      text_button_1               = 'Sí'
+*     ICON_BUTTON_1               = ' '
+      text_button_2               = 'No'
+*     ICON_BUTTON_2               = ' '
+      default_button              = '2'
+      display_cancel_button       = 'X'
+*     USERDEFINED_F1_HELP         = ' '
+*     START_COLUMN                = 25
+*     START_ROW                   = 6
+*     POPUP_TYPE                  =
+*     IV_QUICKINFO_BUTTON_1       = ' '
+*     IV_QUICKINFO_BUTTON_2       = ' '
+    importing
+      answer                      = lv_respuesta
+*   TABLES
+*     PARAMETER                   =
+*   EXCEPTIONS
+*     TEXT_NOT_FOUND              = 1
+*     OTHERS                      = 2
+            .
+  if sy-subrc <> 0.
+*   MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*           WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  endif.
+
+** Si la respuesta es positiva.
+  if lv_respuesta = '1'.
+    leave program.
+  endif.
+
+endform.                    " SALIR_ADVERTENCIA
+*&---------------------------------------------------------------------*
+*&      Form  CARGAR_COORDENADAS
+*&---------------------------------------------------------------------*
+*       Carga de mapa con coordenadas correspondientes.
+*----------------------------------------------------------------------*
+*      -->P_CX  text
+*      -->P_CY  text
+*----------------------------------------------------------------------*
+form cargar_coordenadas  using    p_cx
+                                  p_cy
+                                  p_titulo
+                                  p_codigo.
+  data: lv_url(255)  type c,
+        lv_code(255) type c,
+        lv_x(55) type c,
+        lv_y(55) type c.
+
+** Modificar los valores de las tablas.
+  refresh ti_html.
+
+** Conversión de valor de coordenada para mostrarse en mapa.
+  concatenate p_cx(1) '.' p_cx+1(49) into lv_x.
+  concatenate p_cy(3) '.' p_cy+3(47) into lv_y.
+
+** Instancia de valores.
+  lv_url = 'TEST.HTML'.
+
+** Creación de registro correspondiente.
+  perform insertar using '<html>'.
+  perform insertar using '<head>'.
+  perform insertar using '<title>Simple Map</title>'.
+  perform insertar using '<style>'.
+  perform insertar using 'html, body, #map-canvas {'.
+  perform insertar using 'height: 100%;'.
+  perform insertar using 'margin: 0px;'.
+  perform insertar using 'padding: 0px;'.
+  perform insertar using '}'.
+  perform insertar using '</style>'.
+  perform insertar using '<script src="https://maps.googleapis.com/maps/api/js?v=3.exp"></script>'.
+  perform insertar using '<script>'.
+  perform insertar using 'var map;'.
+  perform insertar using 'function initialize() {'.
+
+** Ingresamos valor de coordenada correspondiente.
+  clear lv_code.
+  concatenate 'var mylating =  new google.maps.LatLng(' lv_x ',' lv_y ');' into lv_code.
+
+  perform insertar using lv_code.
+  perform insertar using 'var mapOptions = {'.
+  perform insertar using 'zoom: 16,'.
+  perform insertar using 'center: mylating'.
+  perform insertar using '};'.
+  perform insertar using 'map = new google.maps.Map(document.getElementById("map-canvas"),mapOptions);'.
+
+** En el título del marcador se muestra la dirección del punto.
+  clear lv_code.
+  concatenate 'var marker = new google.maps.Marker({position: mylating, map: map,title: "'
+              p_titulo
+              '"});'
+  into lv_code.
+
+  perform insertar using lv_code.
+  perform insertar using '}'.
+  perform insertar using 'google.maps.event.addDomListener(window,"load", initialize);'.
+  perform insertar using '</script>'.
+  perform insertar using '</head>'.
+  perform insertar using '<body>'.
+  perform insertar using '<div id="map-canvas"></div>'.
+  perform insertar using '</body>'.
+  perform insertar using '</html>'.
+
+** Carga de información en HTML
+  call method ref_html->load_data
+    exporting
+      type         = 'TEXT'
+      subtype      = 'HTML'
+    importing
+      assigned_url = lv_url
+    changing
+      data_table   = ti_html[].
+
+  call method ref_html->show_data
+    exporting
+      url = lv_url.
+
+endform.                    " CARGAR_COORDENADAS
+
+
+*&---------------------------------------------------------------------*
+*&      Form  cargar_radicado
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_RADICADO text
+*----------------------------------------------------------------------*
+form cargar_radicado  using   p_radicado.
+
+endform.                    " CARGAR_COORDENADAS
+
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0110  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module user_command_0110 input.
+
+  case sy-ucomm.
+    when 'ZREF'.
+      perform refrescar_url.
+    when 'ZADD'.
+      perform adicionar_registro.
+    when 'ZREM'.
+      perform remover_registro.
+    when 'ZADD2'.
+      perform adicionar_registro_cm.
+    when 'ZREM2'.
+      perform remover_registro_cm.
+    when 'ZADD3'.
+      perform adicionar_registro_int.
+    when 'ZREM3'.
+      perform remover_registro_int.
+    when 'ZADDC'.
+      perform adicionar_registro_cont.
+    when 'ZREMC'.
+      perform remover_registro_cont.
+    when 'ZADDI'.
+      perform adicionar_registro_ind.
+    when 'ZREMI'.
+      perform remover_registro_ind.
+    when 'ZPDF'.
+      call screen '0209' starting at '3' '2'.
+    when 'ZMAP'.
+
+** Se interpolan las coordenadas por solicitud de equipo
+** de desarrollo externo.
+      call function 'ZBAPI_CONSULTA_DIRECCION'
+        exporting
+          pa_dir_entrada = wa_proyecto-direccion
+          pa_ciudad      = ''
+        importing
+          pa_dir_salida  = wa_proyecto-direccion
+          pa_cx          = wa_proyecto-coordy
+          pa_cy          = wa_proyecto-coordx.
+
+
+      perform cargar_coordenadas using wa_proyecto-coordx
+                                 wa_proyecto-coordy
+                                 wa_proyecto-direccion
+                                 wa_proyecto-codigo.
+  endcase.
+
+  clear sy-ucomm.
+
+endmodule.                 " USER_COMMAND_0110  INPUT
+*&---------------------------------------------------------------------*
+*&      Form  REFRESCAR_URL
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form refrescar_url .
+
+endform.                    " REFRESCAR_URL
+*&---------------------------------------------------------------------*
+*&      Form  ACTUALIZAR_REGISTROS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form actualizar_registros .
+
+** Tablas de registro y actualización.
+  data: wa_tipoc like ztprci_protipoc,
+        wa_tipoi like ztprci_protipoin,
+        wa_contrato like ztprci_procontra,
+        wa_indicador like ztprci_proind,
+        wa_recursos like ztprci_recursos,
+        wa_etapa like ztprci_proyetap,
+        wa_comuna like ztprci_procomu,
+        wa_poblacion like ztprci_poblacion,
+        wa_pblandos type ztprci_pblandos,
+        lv_subrc like sy-subrc.
+
+** Valores de moneda para actualizar en el sistema.
+  perform convertir_moneda using 'I' wa_proyecto-moneda changing wa_proyecto-inversion_prog.
+  perform convertir_moneda using 'I' wa_proyecto-moneda changing wa_proyecto-inversion_ejec.
+  perform convertir_moneda using 'I' wa_proyecto-moneda changing wa_proyecto-recursosmp.
+  perform convertir_moneda using 'I' wa_proyecto-moneda changing wa_proyecto-recursosof.
+  perform convertir_moneda using 'I' wa_proyecto-moneda changing wa_proyecto-recursosdesf.
+
+** Validación de registro nuevo.
+** actualización de valor consecutivo.
+  if lv_nuevo = 'X'.
+    perform crear_nuevo_proyecto.
+    lv_nuevo = ''.
+  endif.
+
+** Actualizamos registros de proyecto.
+  delete from ztprci_proyecto where codigo = wa_proyecto-codigo.
+  insert ztprci_proyecto from wa_proyecto.
+
+  if sy-subrc <> 0.
+    message e013(zproyciu) with 'Proyecto'.
+*         Error al guardar el registro en tabla &
+  endif.
+
+** Actualizamos registros de tipo.
+  delete from ztprci_protipoc where proyecto = wa_proyecto-codigo.
+  loop at ti_tipo.
+    clear wa_tipoc.
+    wa_tipoc-mandt    = sy-mandt.
+    wa_tipoc-proyecto = wa_proyecto-codigo.
+    wa_tipoc-tipoc    = ti_tipo-codigo.
+    insert ztprci_protipoc from wa_tipoc.
+
+    if sy-subrc <> 0.
+      message e013(zproyciu) with 'Tipo Compromiso'.
+*         Error al guardar el registro en tabla &
+    endif.
+  endloop.
+
+** Actualizamos registros de contratos
+  delete from ztprci_procontra where proyecto = wa_proyecto-codigo.
+  loop at ti_contrato.
+    clear wa_contrato.
+    wa_contrato-mandt        = sy-mandt.
+    wa_contrato-proyecto     = wa_proyecto-codigo.
+    wa_contrato-contrato     = ti_contrato-contrato.
+    insert ztprci_procontra from wa_contrato.
+
+    if sy-subrc <> 0.
+      message e013(zproyciu) with 'Contrato'.
+*         Error al guardar el registro en tabla &
+    endif.
+  endloop.
+
+** Actualizamos registros de indicadores
+  delete from ztprci_proind where proyecto = wa_proyecto-codigo.
+  loop at ti_indicador.
+    clear wa_indicador.
+    wa_indicador-mandt        = sy-mandt.
+    wa_indicador-proyecto     = wa_proyecto-codigo.
+    wa_indicador-indicador    = ti_indicador-indicador.
+    insert ztprci_proind from wa_indicador.
+
+    if sy-subrc <> 0.
+      message e013(zproyciu) with 'Indicador'.
+*         Error al guardar el registro en tabla &
+    endif.
+  endloop.
+
+** Actualizamos registros de tipo intervención.
+  delete from ztprci_protipoin where proyecto = wa_proyecto-codigo.
+  loop at ti_tipoint.
+    clear wa_tipoi.
+    wa_tipoi-mandt    = sy-mandt.
+    wa_tipoi-proyecto = wa_proyecto-codigo.
+    wa_tipoi-tipoin   = ti_tipoint-codigo.
+    insert ztprci_protipoin from wa_tipoi.
+
+    if sy-subrc <> 0.
+      message e013(zproyciu) with 'Tipo Intervención'.
+*         Error al guardar el registro en tabla &
+    endif.
+  endloop.
+
+** Actualizamos registros de recursos.
+  delete from ztprci_recursos where proyecto = wa_proyecto-codigo.
+  loop at ti_recursos.
+    clear wa_recursos.
+    wa_recursos-mandt = sy-mandt.
+    wa_recursos-proyecto = wa_proyecto-codigo.
+    wa_recursos-descripcion = ti_recursos-descripcion.
+    wa_recursos-inversion = ti_recursos-inversion.
+    wa_recursos-moneda = wa_proyecto-moneda.
+    insert ztprci_recursos from wa_recursos.
+
+    if sy-subrc <> 0.
+      message e013(zproyciu) with 'Recursos'.
+*         Error al guardar el registro en tabla &
+    endif.
+
+  endloop.
+
+** Actualizamos registros de etapa.
+  delete from ztprci_proyetap where proyecto = wa_proyecto-codigo.
+  loop at ti_etapa.
+    clear wa_etapa.
+    wa_etapa-mandt = sy-mandt.
+    wa_etapa-proyecto = wa_proyecto-codigo.
+    wa_etapa-etapa = ti_etapa-etapa.
+    wa_etapa-subetapa = ti_etapa-subetapa.
+    wa_etapa-ini_prog = ti_etapa-ini_prog.
+    wa_etapa-fin_prog = ti_etapa-fin_prog.
+    wa_etapa-ini_ejec = ti_etapa-ini_ejec.
+    wa_etapa-fin_ejec = ti_etapa-fin_ejec.
+    wa_etapa-inversion_prog = ti_etapa-inversion_prog.
+    wa_etapa-inversion_ejec = ti_etapa-inversion_ejec.
+    wa_etapa-porcobpr = ti_etapa-porcobpr.
+    wa_etapa-porcobej = ti_etapa-porcobej.
+    wa_etapa-motivo = ti_etapa-motivo.
+    wa_etapa-retraso = ti_etapa-retraso.
+    wa_etapa-pesoeta = ti_etapa-pesoeta.
+    wa_etapa-pesosub = ti_etapa-pesosub.
+    insert ztprci_proyetap from wa_etapa.
+
+    if sy-subrc <> 0.
+      message e013(zproyciu) with 'Etapa'.
+*         Error al guardar el registro en tabla &
+    endif.
+
+  endloop.
+
+** Actualizamos registros de comuna.
+  delete from ztprci_procomu where proyecto = wa_proyecto-codigo.
+  loop at ti_comuna.
+    clear wa_comuna.
+    wa_comuna-mandt = sy-mandt.
+    wa_comuna-proyecto = wa_proyecto-codigo.
+    wa_comuna-comuna = ti_comuna-codigo.
+    insert ztprci_procomu from wa_comuna.
+
+    if sy-subrc <> 0.
+      message e013(zproyciu) with 'Comuna'.
+*         Error al guardar el registro en tabla &
+    endif.
+  endloop.
+
+** Actualizamos registros de población
+  delete from ztprci_poblacion where proyecto = wa_proyecto-codigo.
+  loop at ti_poblacion.
+    clear wa_poblacion.
+
+    wa_poblacion-mandt = sy-mandt.
+    wa_poblacion-proyecto = wa_proyecto-codigo.
+    wa_poblacion-codigo = ti_poblacion-codigo.
+    wa_poblacion-valor = ti_poblacion-valor.
+    insert ztprci_poblacion from wa_poblacion.
+
+    if sy-subrc <> 0.
+      message e013(zproyciu) with 'Población'.
+*         Error al guardar el registro en tabla &
+    endif.
+  endloop.
+
+** Actualizamos registros de proyectos blandos.
+  delete from ztprci_pblandos where proyecto = wa_proyecto-codigo.
+  loop at ti_pblandos.
+    clear wa_pblandos.
+
+    wa_pblandos-mandt = sy-mandt.
+    wa_pblandos-proyecto = wa_proyecto-codigo.
+    wa_pblandos-pbyear   = ti_pblandos-pbyear.
+    wa_pblandos-pbinversion = ti_pblandos-pbinversion.
+
+** Conversión de valores de monedas.
+    perform convertir_moneda using 'I' wa_proyecto-moneda
+                             changing  wa_pblandos-pbinversion.
+
+    insert ztprci_pblandos from wa_pblandos.
+
+    if sy-subrc <> 0.
+      message e013(zproyciu) with 'Proyectos blandos'.
+*         Error al guardar el registro en tabla &
+    endif.
+  endloop.
+
+** Leemos desde estructura texto de seguimiento y guardamos registros.
+  perform crear_nombre.
+
+  if g_mytable[] is not initial.
+    call method g_editor->get_text_as_r3table
+      importing
+        table  = g_mytable
+      exceptions
+        others = 1.
+  endif.
+
+  refresh ti_line.
+  clear wa_line.
+
+  loop at g_mytable into wa_mytable.
+    wa_line-tdline = wa_mytable-line.
+    append wa_line to ti_line.
+  endloop.
+
+  call function 'CREATE_TEXT'
+    exporting
+      fid         = 'ST'
+      flanguage   = 'S'
+      fname       = lv_name
+      fobject     = 'TEXT'
+      save_direct = 'X'
+      fformat     = '*'
+    tables
+      flines      = ti_line
+    exceptions
+      no_init     = 1
+      no_save     = 2
+      others      = 3.
+
+  if sy-subrc <> 0.
+    message e013(zproyciu) with 'Texto de Seguimiento'.
+  endif.
+
+  call method cl_gui_cfw=>flush
+    exceptions
+      others = 1.
+
+  message s012(zproyciu).
+*   Datos guardados correctamente.
+
+** Posterior a guardar, se muestran las monedas de forma correcta nuevamente.
+  perform convertir_moneda using 'E' wa_proyecto-moneda changing wa_proyecto-inversion_prog.
+  perform convertir_moneda using 'E' wa_proyecto-moneda changing wa_proyecto-inversion_ejec.
+  perform convertir_moneda using 'E' wa_proyecto-moneda changing wa_proyecto-recursosmp.
+  perform convertir_moneda using 'E' wa_proyecto-moneda changing wa_proyecto-recursosof.
+  perform convertir_moneda using 'E' wa_proyecto-moneda changing wa_proyecto-recursosdesf.
+
+endform.                    " ACTUALIZAR_REGISTROS
+*&---------------------------------------------------------------------*
+*&      Module  VALIDAR_REGISTROS  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module validar_registros output.
+
+  data: lv_iconotexto type ztprci_icono-icono,
+        lv_sistemapr  type ztprci_sistema-codigosistema.
+
+  clear: lv_entidad,
+         lv_vicealcaldia,
+         lv_iconotexto.
+
+** Valores de entidad
+  select single descripcion
+  into lv_entidad
+  from ztprci_entidad
+  where codigo = wa_proyecto-entidad.
+
+** Valores de vicealcaldía
+  select single descripcion
+  into lv_vicealcaldia
+  from ztprci_vicealcal
+  where codigo = wa_proyecto-vicealcaldia.
+
+** Valores de tipos de proyectos.
+  select single descripcion
+  into lv_tipopr_text
+  from ztprci_tipopr
+  where tipo = wa_proyecto-tipopr.
+
+** Sistema y subsistema.
+  select single descripcion
+  into lv_sistema
+  from ztprci_sistema
+  where codigo = wa_proyecto-sistema.
+
+  select single descripcion codigosistema
+  into (lv_subsistema,lv_sistemapr)
+  from ztprci_sistema
+  where codigo = wa_proyecto-subsistema.
+
+*** Validación de sistema padre y sistema asociado.
+*  if lv_sistemapr <> wa_proyecto-sistema.
+*    message 'Subsistema y sistema no relacionados.' type 'W'.
+*  endif.
+
+** Valores de ícono.
+  select single descripcion icono
+  into (lv_icono,
+        lv_iconotexto)
+  from ztprci_icono
+  where codigo = wa_proyecto-icono.
+
+  if lv_iconotexto is not initial.
+
+    call function 'ICON_CREATE'
+      exporting
+        name                  = lv_iconotexto
+        text                  = ''
+        info                  = 'Status'
+        add_stdinf            = 'X'
+      importing
+        result                = lv_logoicono
+      exceptions
+        icon_not_found        = 1
+        outputfield_too_short = 2
+        others                = 3.
+
+  endif.
+
+endmodule.                 " VALIDAR_REGISTROS  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  ADICIONAR_REGISTRO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form adicionar_registro .
+  clear ti_tipo.
+  append ti_tipo.
+endform.                    " ADICIONAR_REGISTRO
+*&---------------------------------------------------------------------*
+*&      Form  REMOVER_REGISTRO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form remover_registro .
+  delete ti_tipo where sel = 'X'.
+
+  if ti_tipo[] is initial.
+    perform adicionar_registro.
+  endif.
+
+endform.                    " REMOVER_REGISTRO
+*&---------------------------------------------------------------------*
+*&      Module  CARGAR_TIPOS  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module cargar_tipos output.
+  loop at ti_tipo.
+    select single descripcion
+    into ti_tipo-descripcion
+    from ztprci_tipo
+    where codigo = ti_tipo-codigo.
+
+    if sy-subrc = 0.
+      modify ti_tipo index sy-tabix.
+    endif.
+  endloop.
+endmodule.                 " CARGAR_TIPOS  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  ADICIONAR_REGISTRO_CM
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form adicionar_registro_cm .
+  clear ti_comuna.
+  append ti_comuna.
+endform.                    " ADICIONAR_REGISTRO_CM
+*&---------------------------------------------------------------------*
+*&      Form  REMOVER_REGISTRO_CM
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form remover_registro_cm .
+  delete ti_comuna where sel = 'X'.
+
+  if ti_comuna[] is initial.
+    perform adicionar_registro_cm.
+  endif.
+endform.                    " REMOVER_REGISTRO_CM
+*&---------------------------------------------------------------------*
+*&      Module  CARGAR_TIPOS_CM  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module cargar_tipos_cm output.
+
+  loop at ti_comuna.
+    select single descripcion
+    into ti_comuna-descripcion
+    from ztprci_comuna
+    where codigo = ti_comuna-codigo.
+
+    if sy-subrc = 0.
+      modify ti_comuna index sy-tabix.
+    endif.
+  endloop.
+
+endmodule.                 " CARGAR_TIPOS_CM  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  INSERTAR_ETAPA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form insertar_etapa .
+
+** Crear registro de etapa.
+  clear ti_etapa.
+  append ti_etapa.
+
+endform.                    " INSERTAR_ETAPA
+*&---------------------------------------------------------------------*
+*&      Form  GENERAR_ETAPAS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form generar_etapas .
+
+** Borramos registros existentes.
+  clear ti_etapa.
+  refresh ti_etapa.
+
+** Seleccionamos estados y subestados existentes.
+  select codigoestado as etapa
+         codigo as subetapa
+  into corresponding fields of table ti_etapa
+  from ztprci_subestado
+  order by codigoestado codigo.
+
+endform.                    " GENERAR_ETAPAS
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0202  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module user_command_0202 input.
+
+  case sy-ucomm.
+    when 'ZGEN'.
+      perform generar_etapas_msg.
+
+    when 'ZCAL'.
+      perform generar_subetapas_msg.
+
+    when 'PB_INS'.
+      perform insertar_pblandos.
+
+    when 'PB_DEL'.
+      perform borrar_pblandos.
+
+  endcase.
+
+  clear sy-ucomm.
+
+endmodule.                 " USER_COMMAND_0202  INPUT
+
+*&---------------------------------------------------------------------*
+*&      Form  GENERAR_ETAPAS_MSG
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form generar_etapas_msg.
+
+  data: lv_respuesta type c.
+
+  call function 'POPUP_TO_CONFIRM'
+    exporting
+      titlebar                    = 'Generar Etapas'
+*     DIAGNOSE_OBJECT             = ' '
+      text_question               = '¿Está seguro de generar automáticamente las etapas? Las etapas existentes se borrarán.'
+      text_button_1               = 'Generar'
+      icon_button_1               = 'ICON_GENERATE'
+      text_button_2               = 'No'
+*     ICON_BUTTON_2               = ' '
+      default_button              = '2'
+      display_cancel_button       = 'X'
+*     USERDEFINED_F1_HELP         = ' '
+*     START_COLUMN                = 25
+*     START_ROW                   = 6
+      popup_type                  = 'ICON_GENERATE'
+*     IV_QUICKINFO_BUTTON_1       = ' '
+*     IV_QUICKINFO_BUTTON_2       = ' '
+    importing
+      answer                      = lv_respuesta
+*   TABLES
+*     PARAMETER                   =
+*   EXCEPTIONS
+*     TEXT_NOT_FOUND              = 1
+*     OTHERS                      = 2
+            .
+  if sy-subrc <> 0.
+*   MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*           WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  endif.
+
+** Si la respuesta es positiva.
+  if lv_respuesta = '1'.
+    perform generar_etapas.
+  endif.
+
+endform.                    " SALIR_ADVERTENCIA
+*&---------------------------------------------------------------------*
+*&      Form  INSERTAR_RECURSO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form insertar_recurso .
+  clear ti_recursos.
+  append ti_recursos.
+endform.                    " INSERTAR_RECURSO
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_0202  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module status_0202 output.
+  perform cargar_estados_posiciones.
+
+endmodule.                 " STATUS_0202  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  CREAR_NUEVO_PROYECTO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form crear_nuevo_proyecto .
+
+  data: ti_consec like ti_busqueda occurs 0 with header line.
+
+  clear: ti_consec.
+  refresh: ti_consec.
+
+** Llamado máximo código de proyecto + 1
+  select  codigo
+          proyecto
+          posicion
+          nombre
+  into corresponding fields of table ti_consec
+  from ztprci_proyecto
+  order by codigo descending.
+
+  read table ti_consec index 1.
+  wa_proyecto-codigo = ti_consec-codigo + 1.
+  wa_proyecto-moneda = 'COP'.
+
+  call function 'CONVERSION_EXIT_ALPHA_INPUT'
+    exporting
+      input  = wa_proyecto-codigo
+    importing
+      output = wa_proyecto-codigo.
+
+endform.                    " CREAR_NUEVO_PROYECTO
+*&---------------------------------------------------------------------*
+*&      Form  BORRAR_PROYECTO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form borrar_proyecto .
+
+  data: lv_respuesta type c.
+
+  call function 'POPUP_TO_CONFIRM'
+    exporting
+      titlebar                    = 'Eliminar proyecto'
+*     DIAGNOSE_OBJECT             = ' '
+      text_question               = '¿Está seguro de eliminar el proyecto seleccionado?'
+      text_button_1               = 'Eliminar'
+      icon_button_1               = 'ICON_DELETE'
+      text_button_2               = 'No'
+*     ICON_BUTTON_2               = ' '
+      default_button              = '2'
+      display_cancel_button       = 'X'
+*     USERDEFINED_F1_HELP         = ' '
+*     START_COLUMN                = 25
+*     START_ROW                   = 6
+      popup_type                  = 'ICON_DELETE'
+*     IV_QUICKINFO_BUTTON_1       = ' '
+*     IV_QUICKINFO_BUTTON_2       = ' '
+    importing
+      answer                      = lv_respuesta
+*   TABLES
+*     PARAMETER                   =
+*   EXCEPTIONS
+*     TEXT_NOT_FOUND              = 1
+*     OTHERS                      = 2
+            .
+  if sy-subrc <> 0.
+*   MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*           WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  endif.
+
+** Si la respuesta es positiva.
+  if lv_respuesta = '1'.
+    read table ti_busqueda with key sel = 'X'.
+
+    if sy-subrc = 0.
+      wa_proyecto-codigo = ti_busqueda-codigo.
+      delete from ztprci_proyecto where codigo   = wa_proyecto-codigo.
+      delete from ztprci_protipoc where proyecto = wa_proyecto-codigo.
+      delete from ztprci_recursos where proyecto = wa_proyecto-codigo.
+      delete from ztprci_proyetap where proyecto = wa_proyecto-codigo.
+      delete from ztprci_procomu  where proyecto = wa_proyecto-codigo.
+      delete from ztprci_pblandos where proyecto = wa_proyecto-codigo.
+      clear wa_proyecto.
+    endif.
+  endif.
+
+endform.                    " BORRAR_PROYECTO
+
+*&---------------------------------------------------------------------*
+*&      Module  F4_ENTIDAD  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module f4_entidad input.
+
+  types: begin of ty_entidad,
+    codigo type	zproyciu_entidad,
+    descripcion type  zproyciu_descripcion,
+    codigovice type	zproyciu_vicealcaldia,
+  end of ty_entidad.
+
+** Consulta de registros para vicealcaldía.
+  data ti_entidad type standard table of ty_entidad.
+  data:lv_progname    type progname,
+     lv_dynnr       type sychar04,
+     lt_fields      like dynpread occurs 0 with header line.
+
+  refresh ti_entidad.
+  lv_progname = sy-repid.
+  lv_dynnr = sy-dynnr.
+
+  clear lt_fields.
+  refresh lt_fields.
+  lt_fields-fieldname  = 'WA_PROYECTO-VICEALCALDIA'.
+  append lt_fields.
+
+  call function 'DYNP_VALUES_READ'
+    exporting
+      dyname     = lv_progname
+      dynumb     = lv_dynnr
+    tables
+      dynpfields = lt_fields.
+
+  read table lt_fields index 1.
+  wa_proyecto-vicealcaldia = lt_fields-fieldvalue.
+
+  if wa_proyecto-vicealcaldia is initial.
+    select *
+    into corresponding fields of table ti_entidad
+    from ztprci_entidad.
+  else.
+    select *
+    into corresponding fields of table ti_entidad
+    from ztprci_entidad
+    where codigovice = wa_proyecto-vicealcaldia.
+  endif.
+
+** Mostramos matchcode con registros asociados.
+  call function 'F4IF_INT_TABLE_VALUE_REQUEST'
+    exporting
+      retfield        = 'CODIGO'
+      value_org       = 'S'
+      dynpprog        = sy-repid
+      dynpnr          = sy-dynnr
+      dynprofield     = 'WA_PROYECTO-ENTIDAD'
+    tables
+      value_tab       = ti_entidad
+    exceptions
+      parameter_error = 1
+      no_values_found = 2
+      others          = 3.
+  if sy-subrc <> 0.
+    ...
+  endif.
+
+endmodule.                 " F4_ENTIDAD  INPUT
+*&---------------------------------------------------------------------*
+*&      Form  INSERTAR_POBLACION
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form insertar_poblacion .
+  clear ti_poblacion.
+  append ti_poblacion.
+endform.                    " INSERTAR_POBLACION
+*&---------------------------------------------------------------------*
+*&      Form  CARGAR_ESTADOS_POSICIONES
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form cargar_estados_posiciones .
+
+  data: lv_tabix type sy-tabix.
+
+  clear: lv_subetapa,
+         lv_etapa,
+         wa_proyecto-estado.
+
+  select single descripcion codigoestado
+  into (lv_subetapa,wa_proyecto-estado)
+  from ztprci_subestado
+  where codigo = wa_proyecto-subestado.
+
+  select single descripcion
+  into lv_etapa
+  from ztprci_estado
+  where codigo = wa_proyecto-estado.
+
+** Valores totales de inversión por recursos.
+  lv_invej2 = 0.
+  loop at ti_recursos.
+    lv_invej2 = lv_invej2 + ti_recursos-inversion.
+  endloop.
+
+** Valores totales de inversiones ejecutadas.
+  lv_invej = 0.
+  loop at ti_etapa.
+** Tabix.
+    lv_tabix = sy-tabix.
+
+** sumamos inversiones ejecutadas.
+    lv_invej = lv_invej + ti_etapa-inversion_ejec.
+
+** Asignación de valores para cálculo de etapas.
+    ti_etapa-fec_actual      = sy-datum.
+
+** Duración.
+    if ti_etapa-ini_ejec > ti_etapa-fin_ejec.
+      ti_etapa-duracion = 0.
+    else.
+      ti_etapa-duracion = ti_etapa-fin_ejec - ti_etapa-ini_ejec.
+    endif.
+
+** Días ejecutados.
+    if ti_etapa-ini_ejec > ti_etapa-fec_actual.
+      ti_etapa-dias_ejecutados = 0.
+    else.
+      if ti_etapa-ini_ejec is not initial.
+        ti_etapa-dias_ejecutados = ti_etapa-fec_actual - ti_etapa-ini_ejec.
+      else.
+        ti_etapa-dias_ejecutados = 0.
+      endif.
+    endif.
+
+** Porcentaje de obra ejecutado.
+    if ti_etapa-duracion > 0.
+      ti_etapa-porcobpr = ti_etapa-dias_ejecutados / ti_etapa-duracion * 100.
+** Normalización de peso estimado.
+      if ti_etapa-porcobpr > 100.
+        ti_etapa-porcobpr = 100.
+      elseif ti_etapa-porcobpr < 0.
+        ti_etapa-porcobpr = 0.
+      endif.
+    else.
+      ti_etapa-porcobpr = 0.
+    endif.
+
+** Cálculo de valores para retrasos.
+    perform consulta_valores_retraso
+        changing  ti_etapa-porcobej
+                  ti_etapa-porcobpr
+                  ti_etapa-retraso
+                  ti_etapa-ini_ejec
+                  ti_etapa-fin_ejec
+                  ti_etapa-estado.
+
+    modify ti_etapa index lv_tabix.
+
+  endloop.
+
+** Diferencia porcentual de ejecución.
+  if wa_proyecto-porcobpr is initial.
+    wa_proyecto-porcobpr = 0.
+  endif.
+
+  if wa_proyecto-porcobej is initial.
+    wa_proyecto-porcobej = 0.
+  endif.
+
+** Diferencia porcentual entre inversión.
+  if wa_proyecto-inversion_prog is initial.
+    wa_proyecto-inversion_prog = 0.
+  endif.
+
+  if wa_proyecto-inversion_ejec is initial.
+    wa_proyecto-inversion_ejec = 0.
+  endif.
+
+** Diferencia porcentual entre inversión.
+*/BEGIN OF 4820 - 21.12.2015
+  IF wa_proyecto-inversion_prog NE 0.
+    lv_porc1 = wa_proyecto-inversion_ejec * 100 / wa_proyecto-inversion_prog.
+  ELSE.
+    lv_porc1 = 100.
+  ENDIF.
+  IF wa_proyecto-porcobpr NE 0.
+    lv_diferencia = wa_proyecto-porcobej * 100 / wa_proyecto-porcobpr.
+  ELSE.
+    lv_diferencia = 100.
+  ENDIF.
+*/END OF 4820 - 21.12.2015
+
+
+** Indicador de valor global en proyecto.
+  perform consulta_color  changing lv_diferencia
+                                   lv_estadoicon
+                                   lv_descripcionicon
+                                   wa_proyecto-retraso.
+
+** Modificación de valores de proyecto real.
+  if wa_proyecto-retrasoreal is initial.
+    wa_proyecto-retrasoreal = wa_proyecto-retraso.
+    lv_estadoiconr = lv_estadoicon.
+    lv_descripcioniconr = lv_descripcionicon.
+  else.
+    perform consulta_color_codigo using lv_estadoiconr
+                                        lv_descripcioniconr
+                                        wa_proyecto-retrasoreal.
+  endif.
+
+endform.                    " CARGAR_ESTADOS_POSICIONES
+*&---------------------------------------------------------------------*
+*&      Form  VENTANA_LOG
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form ventana_log .
+
+  data: lv_proyecto like wa_proyecto-codigo.
+  refresh ti_logmod.
+
+** Validar registros de tabla de seguimiento.
+  if g_mytable[] is not initial.
+    call method g_editor->get_text_as_r3table
+      importing
+        table  = g_mytable
+      exceptions
+        others = 1.
+  endif.
+
+** Verificar existencia de registros: para registro nuevo no se solicita log.
+  select single codigo
+  into lv_proyecto
+  from ztprci_proyecto
+  where codigo = wa_proyecto-codigo.
+
+** Verificación de datos de log para modificación.
+  if ( wa_proyecto_ini <> wa_proyecto or
+     ti_recursos_ini[] <> ti_recursos[] or
+     g_mytable[] <> g_mytable2[] ) and lv_proyecto is not initial.
+
+    perform validar_registro_log using 'NOMBRE'.
+    perform validar_registro_log using 'DESCRIPCION'.
+    perform validar_registro_log using 'INVERSION_PROG'.
+    perform validar_registro_log using 'INVERSION_EJEC'.
+    perform validar_registro_log using 'FECHAINI'.
+    perform validar_registro_log using 'FECHATER'.
+    perform validar_registro_log using 'FECHAINA'.
+    perform validar_registro_log using 'ESTADO'.
+    perform validar_registro_log using 'SUBESTADO'.
+    perform validar_registro_log using 'AREACONS'.
+    perform validar_registro_log using 'AREAEPUB'.
+    perform validar_registro_log using 'PORCOBPR'.
+    perform validar_registro_log using 'PORCOBEJ'.
+    perform validar_registro_log using 'RECURSOSDESF'.
+    perform validar_registro_log using 'AREAVC'.
+    perform validar_registro_log using 'OBSERVACION'.
+
+** Validar registros tablas recursos en log.
+    if ti_recursos_ini[] <> ti_recursos[].
+      clear ti_logmod.
+      ti_logmod-campo = 'TABLA RECURSOS'.
+      append ti_logmod.
+    endif.
+
+    if g_mytable[] <> g_mytable2[].
+      clear ti_logmod.
+      ti_logmod-campo = 'SEGUIMIENTO'.
+      append ti_logmod.
+    endif.
+
+    if ti_logmod[] is not initial.
+      call screen '0205' starting at '3' '2'.
+    else.
+      perform actualizar_registros.
+    endif.
+  else.
+    perform actualizar_registros.
+  endif.
+
+endform.                    " VENTANA_LOG
+*&---------------------------------------------------------------------*
+*&      Form  VALIDACIONES_REGISTROS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      <--P_LV_SUBRC  text
+*----------------------------------------------------------------------*
+form validaciones_registros  changing p_subrc.
+
+  data: lv_coe type	zproyciu_entidad,
+        lv_cov type	zproyciu_vicealcaldia.
+
+** Validaciones de registros.
+  if lv_invej2 <> wa_proyecto-inversion_prog.
+    message w014(zproyciu) with 'SUMATORIA RECURSOS' 'INVERSIÓN PROGRAMADA'.
+    p_subrc = 4.
+*   El valor de & debe ser igual al valor de &
+  endif.
+
+  if lv_invej <> wa_proyecto-inversion_ejec.
+    message w014(zproyciu) with 'SUMATORIA ETAPAS' 'INVERSIÓN EJECUTADA'.
+    p_subrc = 4.
+*   El valor de & debe ser igual al valor de &
+  endif.
+
+* Validación sistema y subsistema.
+  select single descripcion codigosistema
+  into (lv_subsistema,lv_sistemapr)
+  from ztprci_sistema
+  where codigo = wa_proyecto-subsistema.
+
+** Validación de sistema padre y sistema asociado.
+  if lv_sistemapr <> wa_proyecto-sistema.
+    message 'Subsistema y sistema no relacionados.' type 'W'.
+    p_subrc = 4.
+  endif.
+
+** Validación proyecto desfinanciado.
+  if wa_proyecto-desfinanciado is initial.
+    if wa_proyecto-recursosdesf is not initial.
+      message w018(zproyciu).
+      p_subrc = 4.
+*   Debe seleccionar la casilla de selección Desfinanciado.
+    endif.
+  else.
+    if wa_proyecto-recursosdesf is initial.
+      message w017(zproyciu).
+*   Debe ingresar Valor Desfinanciado en la pestaña Cumplimiento.
+      p_subrc = 4.
+    endif.
+  endif.
+
+** Validación de registros de vicealcaldía y entidad.
+  if wa_proyecto-entidad is not initial.
+
+    select single codigo codigovice
+    into (lv_coe,lv_cov)
+    from ztprci_entidad
+    where codigo = wa_proyecto-entidad
+    and codigovice = wa_proyecto-vicealcaldia.
+
+    if sy-subrc <> 0.
+
+      if wa_proyecto-vicealcaldia is initial.
+        message w016(zproyciu) with lv_entidad.
+*   Ingrese el código de vicealcaldía para la entidad &
+      else.
+        message w015(zproyciu) with lv_entidad lv_vicealcaldia.
+*       La entidad & no pertenece a la vicealcaldía &
+      endif.
+
+      p_subrc = 4.
+
+    endif.
+  endif.
+endform.                    " VALIDACIONES_REGISTROS
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0205  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module user_command_0205 input.
+
+  data: lv_subrc2 like sy-subrc.
+
+  case sy-ucomm.
+    when 'ZGUARD'.
+      clear sy-ucomm.
+** Validación de campos en el log.
+      clear lv_subrc2.
+      perform validar_registros_log changing lv_subrc2.
+** Validación de ejecución correcta.
+      if lv_subrc2 <> 0.
+        return.
+      endif.
+** Actualizamos registros en la base de datos.
+      perform actualizar_registros_log.
+      perform actualizar_registros.
+      wa_proyecto_ini = wa_proyecto.
+      ti_recursos_ini[] = ti_recursos[].
+      leave to screen '0'.
+    when 'RW' or 'ZCANCEL'.
+      clear sy-ucomm.
+      leave to screen '0'.
+  endcase.
+
+endmodule.                 " USER_COMMAND_0205  INPUT
+*&---------------------------------------------------------------------*
+*&      Form  VALIDAR_REGISTRO_LOG
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_2080   text
+*      -->P_WA_PROYECTO  text
+*      -->P_WA_PROYECTO_INI  text
+*----------------------------------------------------------------------*
+form validar_registro_log  using  p_nombre.
+
+  field-symbols: <fs> type any.
+  field-symbols: <fs_ini> type any.
+
+  data: lv_nombre(50) type c,
+        lv_nombre_ini(50) type c.
+
+  data: ti_dfies type dfies occurs 0 with header line.
+
+** Valores de estructuras para utilizar.
+  clear ti_logmod.
+
+** Nombres de las estructuras a comparar.
+  concatenate 'WA_PROYECTO-' p_nombre into lv_nombre.
+  concatenate 'WA_PROYECTO_INI-' p_nombre into lv_nombre_ini.
+
+** Asignación de las estructuras a los field-symbols para obtener valor.
+  assign (lv_nombre) to <fs>.
+  assign (lv_nombre_ini) to <fs_ini>.
+
+** Si los valores son diferentes, creamos el registro del log con
+** los valores correspondientes del campo que queremos validar.
+  if <fs> <> <fs_ini>.
+** Leemos nombre del campo estándar.
+    call function 'DDIF_FIELDINFO_GET'
+      exporting
+        tabname   = 'ZTPRCI_PROYECTO'
+        fieldname = p_nombre
+        langu     = sy-langu
+      tables
+        dfies_tab = ti_dfies.
+
+** Leemos nombre del campo que queremos visualizar.
+    read table ti_dfies index 1.
+    ti_logmod-campo = ti_dfies-scrtext_l.
+    translate ti_logmod-campo to upper case.
+    append ti_logmod.
+  endif.
+
+endform.                    " VALIDAR_REGISTRO_LOG
+*&---------------------------------------------------------------------*
+*&      Form  VALIDAR_REGISTROS_LOG
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form validar_registros_log changing p_subrc.
+
+  loop at ti_logmod.
+    if ti_logmod-motivo is initial.
+      message i019(zproyciu) with ti_logmod-campo.
+*   Por favor ingrese motivo de cambio para &
+      p_subrc = 4.
+    endif.
+  endloop.
+
+endform.                    " VALIDAR_REGISTROS_LOG
+*&---------------------------------------------------------------------*
+*&      Form  ACTUALIZAR_REGISTROS_LOG
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form actualizar_registros_log .
+
+  data: wa_log like ztprci_log.
+
+** Preparar datos para log.
+  loop at ti_logmod.
+    clear wa_log.
+    wa_log-mandt    = sy-mandt.
+    wa_log-proyecto = wa_proyecto-codigo.
+    wa_log-fecha = sy-datum.
+    wa_log-hora = sy-uzeit.
+    wa_log-usuario = sy-uname.
+    wa_log-campo = ti_logmod-campo.
+    wa_log-motivo = ti_logmod-motivo.
+    insert ztprci_log from wa_log.
+
+    if sy-subrc <> 0.
+      message e013(zproyciu) with 'Log'.
+*   Error al guardar el registro en tabla &
+    endif.
+
+  endloop.
+
+endform.                    " ACTUALIZAR_REGISTROS_LOG
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_0206  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module status_0206 output.
+
+  if g_editor_container is initial.
+*   create control container
+    create object g_editor_container
+      exporting
+        container_name              = 'TEXTEDITOR1'
+      exceptions
+        cntl_error                  = 1
+        cntl_system_error           = 2
+        create_error                = 3
+        lifetime_error              = 4
+        lifetime_dynpro_dynpro_link = 5.
+
+*   create calls constructor, which initializes, creats and links
+*    a TextEdit Control
+    create object g_editor
+      exporting
+        parent                     = g_editor_container
+        wordwrap_mode              = cl_gui_textedit=>wordwrap_at_fixed_position
+        wordwrap_to_linebreak_mode = cl_gui_textedit=>true
+      exceptions
+        others                     = 1.
+  endif.
+
+  if g_mytable[] is initial.
+
+    refresh: ti_line,
+             g_mytable.
+
+    clear wa_line.
+    perform crear_nombre.
+
+    call function 'READ_TEXT'
+      exporting
+        client                        = sy-mandt
+        id                            = 'ST'
+        language                      = 'S'
+        name                          = lv_name
+        object                        = 'TEXT'
+*       ARCHIVE_HANDLE                = 0
+*       LOCAL_CAT                     = ' '
+*     IMPORTING
+*       HEADER                        =
+*       OLD_LINE_COUNTER              =
+      tables
+        lines                         = ti_line
+      exceptions
+        id                            = 1
+        language                      = 2
+        name                          = 3
+        not_found                     = 4
+        object                        = 5
+        reference_check               = 6
+        wrong_access_to_archive       = 7
+        others                        = 8
+              .
+
+    loop at ti_line into wa_line.
+      wa_mytable-line = wa_line-tdline.
+      append wa_mytable to g_mytable.
+    endloop.
+
+    g_mytable2[] = g_mytable[].
+
+    call method g_editor->set_text_as_r3table
+      exporting
+        table  = g_mytable
+      exceptions
+        others = 1.
+
+  endif.
+
+endmodule.                 " STATUS_0206  OUTPUT
+" USER_COMMAND_0206  INPUT
+*&---------------------------------------------------------------------*
+*&      Form  CREAR_NOMBRE
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form crear_nombre .
+  clear lv_name.
+  concatenate 'ZPRCI_' wa_proyecto-codigo into lv_name.
+endform.                    " CREAR_NOMBRE
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0206  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module user_command_0206 input.
+
+endmodule.                 " USER_COMMAND_0206  INPUT
+*&---------------------------------------------------------------------*
+*&      Module  CARGAR_TIPOS_POBLACION  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module cargar_tipos_poblacion output.
+  loop at ti_poblacion.
+    select single descripcion
+    into ti_poblacion-descripcion
+    from ztprci_poblac
+    where codigo = ti_poblacion-codigo.
+
+    if sy-subrc = 0.
+      modify ti_poblacion index sy-tabix.
+    endif.
+  endloop.
+endmodule.                 " CARGAR_TIPOS_POBLACION  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  CONVERTIR_MONEDA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_0476   text
+*      -->P_WA_PROYECTO_MONEDA  text
+*      <--P_WA_PROYECTO_INVERSION_PROG  text
+*----------------------------------------------------------------------*
+form convertir_moneda  using    p_tipo
+                                p_moneda
+                       changing p_valor.
+
+  data: lv_valor type bapicurr-bapicurr,
+        lv_conv  type p decimals 0,
+        lv_conv2 type p decimals 2.
+
+  if p_tipo = 'E'.
+    lv_valor = p_valor.
+    call function 'BAPI_CURRENCY_CONV_TO_EXTERNAL'
+      exporting
+        currency        = p_moneda
+        amount_internal = lv_valor
+      importing
+        amount_external = lv_valor.
+  else.
+** Valor ingresado moneda.
+    lv_conv  = p_valor.
+    lv_valor = lv_conv.
+
+    call function 'BAPI_CURRENCY_CONV_TO_INTERNAL'
+      exporting
+        currency             = p_moneda
+        amount_external      = lv_valor
+        max_number_of_digits = 20
+      importing
+        amount_internal      = lv_valor.
+  endif.
+
+** Reasignamos valor convertido de moneda.
+  lv_conv2 = lv_valor.
+  p_valor = lv_conv2.
+
+endform.                    "CONVERTIR_MONEDA
+*&---------------------------------------------------------------------*
+*&      Form  CALCULAR_ETAPA_AUTOMATICA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form calcular_etapa_automatica .
+** Definición de cálculo para etapas.
+  data: ti_etapacal    type ty_etapacal occurs 0 with header line,
+        ti_subetapacal type ty_etapacal occurs 0 with header line.
+
+** Limpiamos valores de las etapas calculadas previamente.
+  clear ti_etapacal.
+  refresh ti_etapacal.
+
+  clear ti_subetapacal.
+  refresh ti_subetapacal.
+
+** Cargamos tabla de etapas calculadas de acuerdo a fórmula.
+  loop at ti_etapa.
+    ti_etapacal-etapa = ti_etapa-etapa.
+    ti_etapacal-subetapa = ti_etapa-subetapa.
+    ti_etapacal-avancetot = ti_etapa-porcobej * ti_etapa-pesosub / 100.
+
+** Captura de etapas y subetapas.
+    ti_subetapacal = ti_etapacal.
+    append ti_subetapacal.
+    collect ti_etapacal.
+  endloop.
+
+** Ordenamos de mayor a menor para leer el registro
+** con mayor peso y sobre este buscamos la subetapa con mayor valor
+** para sugerirla.
+  sort ti_etapacal by avancetot descending.
+  read table ti_etapacal index 1.
+
+** Borramos registros que no correspondan a la etapa.
+  delete ti_subetapacal where etapa <> ti_etapacal-etapa.
+  sort ti_subetapacal by avancetot descending.
+
+** Asignamos el valor de la subetapa calculada al campo correspondiente.
+  read table ti_subetapacal index 1.
+  wa_proyecto-subestado = ti_subetapacal-subetapa.
+
+endform.                    " CALCULAR_ETAPA_AUTOMATICA
+*&---------------------------------------------------------------------*
+*&      Form  GENERAR_SUBETAPAS_MSG
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form generar_subetapas_msg .
+
+  data: lv_respuesta type c.
+
+  call function 'POPUP_TO_CONFIRM'
+    exporting
+      titlebar                    = 'Calcular Subetapa'
+*     DIAGNOSE_OBJECT             = ' '
+      text_question               = '¿Está seguro de calcular automáticamente la etapa y subetapa?'
+      text_button_1               = 'Calcular'
+      icon_button_1               = 'ICON_WD_BUILD_ALL'
+      text_button_2               = 'No'
+*     ICON_BUTTON_2               = ' '
+      default_button              = '2'
+      display_cancel_button       = 'X'
+*     USERDEFINED_F1_HELP         = ' '
+*     START_COLUMN                = 25
+*     START_ROW                   = 6
+      popup_type                  = 'ICON_WD_BUILD_ALL'
+*     IV_QUICKINFO_BUTTON_1       = ' '
+*     IV_QUICKINFO_BUTTON_2       = ' '
+    importing
+      answer                      = lv_respuesta
+*   TABLES
+*     PARAMETER                   =
+*   EXCEPTIONS
+*     TEXT_NOT_FOUND              = 1
+*     OTHERS                      = 2
+            .
+  if sy-subrc <> 0.
+*   MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*           WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  endif.
+
+** Si la respuesta es positiva.
+  if lv_respuesta = '1'.
+    perform calcular_etapa_automatica.
+  endif.
+
+endform.                    " GENERAR_SUBETAPAS_MSG
+*&---------------------------------------------------------------------*
+*&      Form  VALIDACION_AUTHORITY_CHECK
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form validacion_authority_check .
+
+  authority-check object 'ZOPRCI_001'
+           id 'ACTVT' field '16'.
+
+  if sy-subrc <> 0.
+    message e009(zproyciu).
+*   No tiene autorización para ejecutar en este programa.
+  endif.
+
+endform.                    " VALIDACION_AUTHORITY_CHECK
+*&---------------------------------------------------------------------*
+*&      Form  REFRESCAR_CAMPOS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form refrescar_campos .
+
+  clear: wa_proyecto,
+         ti_tipo,
+         ti_recursos,
+         ti_etapa,
+         ti_comuna,
+         ti_pblandos.
+
+  refresh: ti_tipo,
+           ti_recursos,
+           ti_etapa,
+           ti_comuna,
+           ti_pblandos.
+
+  "Valor para controlar creación de proyecto.
+  lv_nuevo = 'X'.
+endform.                    " REFRESCAR_CAMPOS
+*&---------------------------------------------------------------------*
+*&      Form  CONSULTA_VALORES_RETRASO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form consulta_valores_retraso changing p_ejecutado
+                                       p_programado
+                                       p_retraso
+                                       p_ini_ejec
+                                       p_fin_ejec
+                                       p_estado.
+
+  data: lv_estado(50) type c,
+        lv_real type p decimals 2,
+        lv_parama type p decimals 2,
+        lv_paramv type p decimals 2,
+        lv_realc(20) type c.
+
+  data: ti_retraso type ztprci_retraso occurs 0 with header line.
+
+** Consulta de parámetros.
+  select *
+  into corresponding fields of table ti_retraso
+  from ztprci_retraso.
+
+** Estados para íconos.
+  clear lv_estado.
+  clear lv_real.
+
+** Cálculo de valor real.
+  if p_programado > 0.
+    lv_real = p_ejecutado * 100 / p_programado.
+  else.
+    lv_real = 0.
+  endif.
+
+** Calculo de valor retraso.
+  if lv_real >= 100.
+    p_retraso = 0.
+  else.
+    if p_programado <= 0.
+      p_retraso = 0.
+    else.
+      p_retraso = 100 - lv_real.
+    endif.
+  endif.
+
+** Estado vacío si no se tiene porcentaje programado.
+  if p_programado = 0.
+    lv_estado = 'ICON_LIGHT_OUT'.
+** Si las fechas están en futuro y el porcentaje de obra ejecutado es mayor
+** a cero, el valor es verde.
+  elseif p_ini_ejec > sy-datum and p_fin_ejec > sy-datum.
+    if p_ejecutado > 0.
+      lv_estado = 'ICON_GREEN_LIGHT'.
+    endif.
+** Valores dentro del período normal de medición para el valor real.
+  elseif p_ini_ejec <= sy-datum and p_fin_ejec > sy-datum.
+
+** Parámetro amarillo
+    read table ti_retraso with key codigo = 'A'.
+    lv_parama = ti_retraso-porcentaje.
+** Parámetro verde.
+    read table ti_retraso with key codigo = 'V'.
+    lv_paramv = ti_retraso-porcentaje.
+
+    if lv_real >= lv_paramv.
+      lv_estado = 'ICON_GREEN_LIGHT'.
+    elseif lv_real >= lv_parama.
+      lv_estado = 'ICON_YELLOW_LIGHT'.
+    else.
+      lv_estado = 'ICON_RED_LIGHT'.
+    endif.
+
+  elseif p_ini_ejec <= sy-datum and p_fin_ejec <= sy-datum.
+    if lv_real >= 100.
+      lv_estado = 'ICON_GREEN_LIGHT'.
+    else.
+      lv_estado = 'ICON_RED_LIGHT'.
+    endif.
+  endif.
+
+** Convertimos en CHAR el valor real encontrado.
+  write lv_real to lv_realc.
+  condense lv_realc.
+
+  call function 'ICON_CREATE'
+    exporting
+      name                        = lv_estado
+      text                        = lv_realc
+      info                        = 'Status'
+      add_stdinf                  = 'X'
+    importing
+      result                      = p_estado
+*     EXCEPTIONS
+*       ICON_NOT_FOUND              = 1
+*       OUTPUTFIELD_TOO_SHORT       = 2
+*       OTHERS                      = 3
+      .
+
+endform.                    " CONSULTA_VALORES_RETRASO
+*&---------------------------------------------------------------------*
+*&      Form  CONSULTA_COLOR
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      <--P_LV_DIFERENCIA  text
+*----------------------------------------------------------------------*
+form consulta_color  changing p_real
+                              p_estado
+                              p_texto
+                              p_retraso.
+
+  data: lv_estado(50) type c,
+        lv_real type p decimals 2,
+        lv_parama type p decimals 2,
+        lv_paramv type p decimals 2,
+        lv_paramr type p decimals 2,
+        lv_texto type ztprci_retraso-descripcion,
+        lv_realc(20) type c,
+        lv_subrc.
+
+  data: ti_retraso type ztprci_retraso occurs 0 with header line.
+
+** Consulta de parámetros.
+  select *
+  into corresponding fields of table ti_retraso
+  from ztprci_retraso.
+
+** Asignación de valor a parámetro inicial.
+  lv_real = p_real.
+
+** Verificación proyectos de ciudad o proyectos blandos.
+  if wa_proyecto-tipopr = '01'.
+    lv_subrc = 0.
+  else.
+    lv_subrc = 1.
+  endif.
+
+  if lv_subrc = 0.
+    sort ti_retraso by porcentaje ascending.
+    lv_real = 100 - lv_real.
+  else.
+    sort ti_retraso by porcentaje2 descending.
+  endif.
+
+** Cálculo de porcentajes de retraso/cumplimiento.
+  loop at ti_retraso.
+    if lv_subrc = 0.
+      if lv_real <= ti_retraso-porcentaje.
+        exit.
+      endif.
+    else.
+      if lv_real >= ti_retraso-porcentaje2.
+        exit.
+      endif.
+    endif.
+  endloop.
+
+** Asignación de texto consultado.
+  p_retraso = ti_retraso-codigo.
+  lv_estado = ti_retraso-icono.
+
+** Asignación de texto dependiendo de consulta.
+  if lv_subrc = 0.
+    p_texto   = ti_retraso-descripcion.
+  else.
+    p_texto = ti_retraso-descripcion2.
+  endif.
+
+** Convertimos en CHAR el valor real encontrado.
+  write lv_real to lv_realc.
+  condense lv_realc.
+
+  call function 'ICON_CREATE'
+    exporting
+      name                        = lv_estado
+      text                        = lv_realc
+      info                        = 'Status'
+      add_stdinf                  = 'X'
+    importing
+      result                      = p_estado
+*     EXCEPTIONS
+*       ICON_NOT_FOUND              = 1
+*       OUTPUTFIELD_TOO_SHORT       = 2
+*       OTHERS                      = 3
+      .
+
+endform.                    " CONSULTA_COLOR
+*&---------------------------------------------------------------------*
+*&      Form  INSERTAR_PBLANDOS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form insertar_pblandos .
+
+** Crear registro de etapa.
+  clear ti_pblandos.
+  append ti_pblandos.
+
+endform.                    " INSERTAR_PBLANDOS
+*&---------------------------------------------------------------------*
+*&      Form  BORRAR_PBLANDOS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form borrar_pblandos .
+  delete ti_pblandos where sel = 'X'.
+endform.                    " BORRAR_PBLANDOS
+
+*&---------------------------------------------------------------------*
+*&      Form  CONSULTA_COLOR_CODIGO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      <--P_ESTADO   text
+*      <--P_TEXTO    text
+*      <--P_RETRASO  text
+*----------------------------------------------------------------------*
+form consulta_color_codigo  changing p_estado
+                                     p_texto
+                                     p_retraso.
+
+  data: lv_estado(50) type c,
+        lv_real type p decimals 2,
+        lv_parama type p decimals 2,
+        lv_paramv type p decimals 2,
+        lv_paramr type p decimals 2,
+        lv_texto type ztprci_retraso-descripcion,
+        lv_realc(20) type c,
+        lv_subrc.
+
+  data: ti_retraso type ztprci_retraso occurs 0 with header line.
+
+** Consulta de parámetros.
+  select *
+  into corresponding fields of table ti_retraso
+  from ztprci_retraso
+  where codigo = p_retraso.
+
+** Asignación de texto consultado.
+  read table ti_retraso index 1.
+  p_retraso = ti_retraso-codigo.
+  lv_estado = ti_retraso-icono.
+
+** Verificación proyectos de ciudad o proyectos blandos.
+  if wa_proyecto-tipopr = '01'.
+    lv_subrc = 0.
+  else.
+    lv_subrc = 1.
+  endif.
+
+  if lv_subrc = 0.
+    p_texto   = ti_retraso-descripcion.
+  else.
+    p_texto   = ti_retraso-descripcion2.
+  endif.
+
+** Convertimos en CHAR el valor real encontrado.
+  lv_realc = 'ER'.
+
+  call function 'ICON_CREATE'
+    exporting
+      name                        = lv_estado
+      text                        = lv_realc
+      info                        = 'Status'
+      add_stdinf                  = 'X'
+    importing
+      result                      = p_estado
+*     EXCEPTIONS
+*       ICON_NOT_FOUND              = 1
+*       OUTPUTFIELD_TOO_SHORT       = 2
+*       OTHERS                      = 3
+      .
+
+endform.                    " CONSULTA_COLOR
+*&---------------------------------------------------------------------*
+*&      Module  CONSULTA_MATCH  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module consulta_match input.
+  perform consultar_registros_match.
+endmodule.                 " CONSULTA_MATCH  INPUT
+*&---------------------------------------------------------------------*
+*&      Form  CONSULTAR_REGISTROS_MATCH
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form consultar_registros_match .
+
+  data : begin of list_of_fields occurs 10,
+    fieldname like dd03l-fieldname,
+  end of list_of_fields.
+
+  data : indice like sy-tabix,
+    fieldname like dd03l-fieldname,
+    fields like help_value occurs 10 with header line,
+    shrinkfields like dynpread occurs 0 with header line,
+    dynpfields like dynpread occurs 0 with header line.
+
+  data: begin of r_retraso occurs 0,
+    codigo  type  zproyciu_retraso,
+    descripcion type  zproyciu_descripcion,
+  end of r_retraso.
+
+  data: ti_retraso like r_retraso occurs 0 with header line.
+
+  if wa_proyecto-tipopr = '01'.
+    select codigo descripcion
+    into corresponding fields of table ti_retraso
+    from ztprci_retraso.
+  else.
+    select codigo descripcion2 as descripcion
+    into corresponding fields of table ti_retraso
+    from ztprci_retraso.
+  endif.
+
+  list_of_fields-fieldname = 'ZTPRCI_RETRASO-CODIGO'.
+  append list_of_fields.
+
+  list_of_fields-fieldname = 'ZTPRCI_RETRASO-DESCRIPCION'.
+  append list_of_fields.
+
+  fieldname = 'WA_PROYECTO-RETRASOREAL'.
+
+  call function 'TRANSFER_NAMES_TO_FIELDS'
+    exporting
+      selectfield        = fieldname
+    tables
+      fields             = fields
+      namelist           = list_of_fields
+    exceptions
+      wrong_format_given = 01.
+
+  call function 'HELP_VALUES_GET_NO_DD_NAME'
+    exporting
+      selectfield                  = fieldname
+      titel                        = 'Parámetro'
+      use_user_selections          = 'S'
+    importing
+      ind                          = indice
+    tables
+      fields                       = fields
+      full_table                   = ti_retraso
+      user_sel_fields              = shrinkfields
+    exceptions
+      full_table_empty             = 01
+      no_tablestructure_given      = 02
+      no_tablefields_in_dictionary = 03
+      more_than_one_selectfield    = 04
+      no_electfield                = 05.
+
+  if indice is not initial.
+    read table ti_retraso index indice.
+    wa_proyecto-retrasoreal = ti_retraso-codigo.
+  endif.
+endform.                    " CONSULTAR_REGISTROS_MATCH
+*&---------------------------------------------------------------------*
+*&      Form  VALIDAR_ROLES
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form validar_roles .
+
+** Validación de rol para fondo medellín.
+  data: ti_rol type ztprci_rol occurs 0 with header line,
+        ti_perfil type ztprci_perfil occurs 0 with header line,
+        lv_tipopr_rol(3) type c.
+
+  select *
+  into corresponding fields of table ti_perfil
+  from ztprci_perfil
+  where usuario = sy-uname.
+
+  if sy-subrc <> 0.
+    message e021(zproyciu).
+    return.
+*   No tiene perfiles configurados.
+  endif.
+
+** Validamos permisos para roles.
+  read table ti_perfil with key codigo = 'ADM'.
+** Si no tiene perfil de administrador buscamos posiciones específicas.
+  if sy-subrc <> 0.
+    clear: lv_tipopr_rol.
+    concatenate 'T' wa_proyecto-tipopr into lv_tipopr_rol.
+    read table ti_perfil with key codigo = lv_tipopr_rol.
+
+    if sy-subrc <> 0.
+      message e023(zproyciu) with wa_proyecto-tipopr.
+*     No tiene autorización para tipo de proyecto &
+    endif.
+  endif.
+
+endform.                    " VALIDAR_ROLES
+*&---------------------------------------------------------------------*
+*&      Module  GET_FILENAME  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module get_filename input.
+
+  data: ti_check type standard table of dynpread,
+        st_check type dynpread.
+
+** Lectura de campo desde dynpro.
+  refresh ti_check.
+  clear st_check.
+  st_check-fieldname = 'GV_CHKMASIVO'.
+  append st_check to ti_check.
+
+  call function 'DYNP_VALUES_READ'
+    exporting
+      dyname     = sy-repid
+      dynumb     = sy-dynnr
+    tables
+      dynpfields = ti_check.
+
+** Asignación de valor en dynpro.
+  read table ti_check into st_check index 1.
+  gv_chkmasivo = st_check-fieldvalue.
+
+  if gv_chkmasivo is not initial.
+    call method cl_gui_frontend_services=>directory_browse
+      exporting
+        initial_folder  = gv_path_ini
+      changing
+        selected_folder = gv_path_sel
+      exceptions
+        cntl_error      = 1
+        error_no_gui    = 2
+        others          = 3.
+    if sy-subrc = 0.
+      call method cl_gui_cfw=>flush( ).
+      if not gv_path_sel is initial.
+        gv_path_ini = gv_input = gv_path_sel.
+        gv_file = gv_input.
+      endif.
+    endif.
+  else.
+    call function 'KD_GET_FILENAME_ON_F4'
+      exporting
+        mask          = '.jpg,.jpeg,.png'
+      changing
+        file_name     = gv_input
+      exceptions
+        mask_too_long = 1
+        others        = 2.
+
+    if sy-subrc ne 0.
+      message id sy-msgid type sy-msgty
+          number sy-msgno
+            with sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    endif.
+    gv_file = gv_input.
+  endif.
+
+endmodule.                 " GET_FILENAME  INPUT
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0207  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module user_command_0207 input.
+
+  data: vl_oref   type ref to cx_root.
+
+  case sy-ucomm.
+** Ejecución de carga de imágenes en el servidor.
+    when 'CARGAR'.
+** Limpiamos variable de ejecución
+      clear: sy-ucomm.
+** Leemos parámetros de la TVARVC.
+      read table gt_tvarvc with key name = 'ZPRCIU_RUTA_SERVER'.
+
+      if sy-subrc <> 0.
+        message 'Falta parámetro TVARVC: ZPRCIU_RUTA_SERVER' type 'E'.
+      endif.
+
+** Verificamos ruta de destino y ruta de recurso.
+      vg_source = gv_file.
+      vg_destin = gt_tvarvc-low.
+** Creación de carpetas (se crean si no existen en la ruta de destino).
+      perform crear_carpetas.
+** Inicio de copia de archivo.
+      perform copiar_archivos.
+** Actualizar el estado del visor.
+      perform cargar_visor.
+
+** Ejecución de carga de visor para visualizar imágenes.
+    when 'CARGARIMG' or 'DISENO' or 'PREVIEW' or 'AVANCE'.
+      gv_index_img = 1.
+      perform cargar_visor.
+      clear: sy-ucomm.
+
+    when 'Z1'.
+      gv_index_img = 1.
+      perform cargar_visor.
+      clear: sy-ucomm.
+
+    when 'Z2'.
+      add -1 to gv_index_img.
+      perform cargar_visor.
+      clear: sy-ucomm.
+
+    when 'Z3'.
+      add 1 to gv_index_img.
+      perform cargar_visor.
+      clear: sy-ucomm.
+
+    when 'Z4'.
+      gv_index_img = -1.
+      perform cargar_visor.
+      clear: sy-ucomm.
+
+    when 'BORRARIMG'.
+      perform borrar_imagen.
+      clear: sy-ucomm.
+
+    when 'BACK'.
+*      if ref_cont_img is not initial.
+*        call method ref_html_img->free.
+*        call method ref_cont_img->free.
+      clear gv_index_img.
+      clear gv_nombrefolder.
+*        clear gv_imagennumero.
+*      endif.
+  endcase.
+
+endmodule.                 " USER_COMMAND_0207  INPUT
+*&---------------------------------------------------------------------*
+*&      Form  COPIAR_ARCHIVOS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form copiar_archivos .
+
+  data: lv_consecutivo type i.
+  perform verificar_consecutivo changing lv_consecutivo.
+
+  if gv_chkmasivo is initial.
+    perform copiar_archivo_individual using lv_consecutivo ''.
+  else.
+    perform copiar_archivo_masivo using lv_consecutivo.
+  endif.
+
+endform.                    " COPIAR_ARCHIVOS
+*&---------------------------------------------------------------------*
+*&      Form  CREAR_CARPETAS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form crear_carpetas .
+** Inicialización de carpetas de destino.
+  data: lv_destin type string,
+        lv_preview type string value 'preview',
+        lv_diseno  type string value 'diseno',
+        lv_avance  type string value 'avance'.
+
+** Verificación de carpeta con código de proyecto (carpeta raíz).
+  concatenate vg_destin '\' wa_proyecto-codigo into vg_destin.
+
+** Verificación de existencia de carpetas con código existente.
+  call method cl_gui_frontend_services=>directory_exist
+    exporting
+      directory            = vg_destin
+    receiving
+      result               = vg_result
+    exceptions
+      cntl_error           = 1
+      error_no_gui         = 2
+      wrong_parameter      = 3
+      not_supported_by_gui = 4
+      others               = 5.
+
+  if sy-subrc <> 0.
+    message 'Error al acceder a la carpeta de destino' type 'E'.
+  endif.
+
+** Si las carpetas no existen, se crean.
+  if vg_result is initial.
+** Creación de carpetas.
+    perform crear_carpeta_individual using ''.
+    perform crear_carpeta_individual using lv_avance.
+    perform crear_carpeta_individual using lv_diseno.
+    perform crear_carpeta_individual using lv_preview.
+  endif.
+
+** Definición de carpeta destino.
+  if gv_diseno is not initial.
+    concatenate vg_destin '\' lv_diseno into  vg_destin_file.
+    gv_nombrefolder = lv_diseno.
+  elseif gv_avance is not initial.
+    concatenate vg_destin '\' lv_avance into  vg_destin_file.
+    gv_nombrefolder = lv_avance.
+  else.
+    concatenate vg_destin '\' lv_preview into  vg_destin_file.
+    gv_nombrefolder = lv_preview.
+  endif.
+
+endform.                    " CREAR_CARPETAS
+*&---------------------------------------------------------------------*
+*&      Form  CREAR_CARPETA_INDIVIDUAL
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_LV_PREVIEW  text
+*----------------------------------------------------------------------*
+form crear_carpeta_individual  using  pa_nombre.
+
+  data: lv_rc         type i,
+        lv_destin     type string,
+        lv_error      type char20.
+
+  data: ti_check type standard table of dynpread,
+        st_check type dynpread.
+
+** Armado de carpeta con ruta de destino.
+  concatenate vg_destin '\' pa_nombre into lv_destin.
+
+** Creación de carpeta.
+  call method cl_gui_frontend_services=>directory_create
+    exporting
+      directory                = lv_destin
+    changing
+      rc                       = lv_rc
+    exceptions
+      directory_create_failed  = 1
+      cntl_error               = 2
+      error_no_gui             = 3
+      directory_access_denied  = 4
+      directory_already_exists = 5
+      path_not_found           = 6
+      unknown_error            = 7
+      not_supported_by_gui     = 8
+      wrong_parameter          = 9
+      others                   = 10.
+
+  if sy-subrc <> 0.
+    if pa_nombre is initial.
+      message 'Error creación carpeta proyecto' type 'E'.
+    else.
+      concatenate 'Error en creación de carpeta' pa_nombre into lv_error separated by space.
+      message lv_error type 'E'.
+    endif.
+  endif.
+
+endform.                    " CREAR_CARPETA_INDIVIDUAL
+*&---------------------------------------------------------------------*
+*&      Form  COPIAR_ARCHIVO_INDIVIDUAL
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_VG_SOURCE  text
+*      -->P_VG_DESTIN_FILE  text
+*      -->P_4368   text
+*----------------------------------------------------------------------*
+form copiar_archivo_individual  using p_consecutivo p_mass.
+
+  data: vl_destin_file type string,
+        vl_consecutivo type char10,
+        vl_mensaje type char50.
+
+  vl_consecutivo = p_consecutivo.
+  call function 'CONVERSION_EXIT_ALPHA_INPUT'
+    exporting
+      input  = vl_consecutivo
+    importing
+      output = vl_consecutivo.
+
+  concatenate vg_destin_file '\foto_' vl_consecutivo '.jpg' into vl_destin_file.
+  condense vl_destin_file no-gaps.
+
+  call method cl_gui_frontend_services=>file_copy
+    exporting
+      source               = vg_source
+      destination          = vl_destin_file
+      overwrite            = 'X'
+    exceptions
+      cntl_error           = 1
+      error_no_gui         = 2
+      wrong_parameter      = 3
+      disk_full            = 4
+      access_denied        = 5
+      file_not_found       = 6
+      destination_exists   = 7
+      unknown_error        = 8
+      path_not_found       = 9
+      disk_write_protect   = 10
+      drive_not_ready      = 11
+      not_supported_by_gui = 12
+      others               = 13.
+
+  if sy-subrc <> 0.
+    case sy-subrc.
+      when 1.
+        vg_except = 'cntl_error'.
+      when 2.
+        vg_except = 'error_no_gui'.
+      when 3.
+        vg_except = 'wrong_parameter'.
+      when 4.
+        vg_except = 'disk_full'.
+      when 5.
+        vg_except = 'access_denied'.
+      when 6.
+        vg_except = 'file_not_found'.
+      when 7.
+        vg_except = 'destination_exists'.
+      when 8.
+        vg_except = 'unknown_error'.
+      when 9.
+        vg_except = 'path_not_found'.
+      when 10.
+        vg_except = 'disk_write_protect'.
+      when 11.
+        vg_except = 'drive_not_ready'.
+      when 12.
+        vg_except = 'not_supported_by_gui'.
+      when 13.
+        vg_except = 'other'.
+    endcase.
+
+    concatenate 'Excepción:' vg_except into vg_except separated by space.
+    message vg_except type 'E'.
+  else.
+    if p_mass is initial.
+      message 'Proceso de carga exitoso.' type 'S'.
+    else.
+** Generar reloj de porcentaje de ejecución.
+      concatenate 'Archivo' vl_consecutivo 'cargado correctamente.' into vl_mensaje separated by space.
+      call function 'SAPGUI_PROGRESS_INDICATOR'
+        exporting
+          percentage = 75
+          text       = vl_mensaje.
+    endif.
+  endif.
+
+endform.                    " COPIAR_ARCHIVO_INDIVIDUAL
+*&---------------------------------------------------------------------*
+*&      Form  VERIFICAR_CONSECUTIVO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      <--P_LV_CONSECUTIVO  text
+*----------------------------------------------------------------------*
+form verificar_consecutivo changing p_consecutivo.
+
+  data: ti_archivos type standard table of file_info,
+        wa_archivos type file_info,
+        vl_consecutivo type char10,
+        lv_count type i.
+
+  call method cl_gui_frontend_services=>directory_list_files
+    exporting
+      directory                   = vg_destin_file
+      filter                      = 'foto_*'
+      files_only                  = 'X'
+*     directories_only            =
+    changing
+      file_table                  = ti_archivos
+      count                       = lv_count
+  exceptions
+    cntl_error                  = 1
+    directory_list_files_failed = 2
+    wrong_parameter             = 3
+    error_no_gui                = 4
+    not_supported_by_gui        = 5
+    others                      = 6
+          .
+  if sy-subrc <> 0.
+    message 'Error al acceder a la carpeta de destino' type 'E'.
+  endif.
+
+** Si existen archivos verificamos el máximo y adicionamos un registro.
+  if lv_count > 0.
+** Buscamos el registro con el mayor número y adicionamos 1.
+    sort ti_archivos by filename descending.
+    read table ti_archivos into wa_archivos index 1.
+    translate wa_archivos-filename to lower case.
+    replace 'foto_' with '' into wa_archivos-filename.
+    replace '.jpg' with '' into wa_archivos-filename.
+    condense wa_archivos-filename no-gaps.
+    vl_consecutivo = wa_archivos-filename.
+
+    call function 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      exporting
+        input  = vl_consecutivo
+      importing
+        output = vl_consecutivo.
+
+    condense vl_consecutivo no-gaps.
+    p_consecutivo = vl_consecutivo.
+    add 1 to p_consecutivo.
+  else.
+    p_consecutivo = 1.
+  endif.
+
+endform.                    " VERIFICAR_CONSECUTIVO
+*&---------------------------------------------------------------------*
+*&      Form  COPIAR_ARCHIVO_MASIVO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_LV_CONSECUTIVO  text
+*----------------------------------------------------------------------*
+form copiar_archivo_masivo  using  p_consecutivo.
+
+  data: ti_archivos type standard table of file_info,
+          wa_archivos type file_info,
+          vl_consecutivo type char10,
+          vl_source type string,
+          lv_count type i.
+
+  call method cl_gui_frontend_services=>directory_list_files
+    exporting
+      directory                   = vg_source
+*     filter                      = '*.jpg'
+      files_only                  = 'X'
+*     directories_only            =
+    changing
+      file_table                  = ti_archivos
+      count                       = lv_count
+  exceptions
+    cntl_error                  = 1
+    directory_list_files_failed = 2
+    wrong_parameter             = 3
+    error_no_gui                = 4
+    not_supported_by_gui        = 5
+    others                      = 6
+          .
+  if sy-subrc <> 0.
+    message 'Error al acceder a la carpeta de origen' type 'E'.
+  endif.
+
+  vl_source = vg_source.
+  loop at ti_archivos into wa_archivos.
+    clear vg_source.
+    concatenate vl_source '\' wa_archivos-filename into vg_source.
+    perform copiar_archivo_individual using p_consecutivo 'X'.
+    add 1 to p_consecutivo.
+  endloop.
+
+** Notificación para carga masiva de archivos.
+  message 'Carga masiva finalizada correctamente' type 'S'.
+
+endform.                    " COPIAR_ARCHIVO_MASIVO
+*&---------------------------------------------------------------------*
+*&      Module  CREACION_IMAGENES  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module creacion_imagenes output.
+
+*  perform creacion_imagen_individual using
+*  '\\hades\viceproyectos\070058_0010\avance\foto1.jpg'
+*  'AV01'.
+
+  if gv_index_img is initial.
+    gv_index_img = 1.
+    perform cargar_visor.
+  endif.
+
+endmodule.                 " CREACION_IMAGENES  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  LOAD_PIC_FROM_DB
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      <--P_URL  text
+*----------------------------------------------------------------------*
+form load_pic_from_db using p_url changing p_url_stream.
+
+  types ty_pict_line type x length 1022.
+  data: xline type x.
+  data: t_file like table of xline with header line.
+  data: vl_length type i,
+        vl_buffer type xstring,
+        ti_buffer type table of ty_pict_line.
+
+  call function 'GUI_UPLOAD'
+    exporting
+      filename                = p_url
+      filetype                = 'BIN'
+    importing
+      filelength              = vl_length
+    tables
+      data_tab                = t_file
+    exceptions
+      file_open_error         = 1
+      file_read_error         = 2
+      no_batch                = 3
+      gui_refuse_filetransfer = 4
+      invalid_type            = 5
+      no_authority            = 6
+      unknown_error           = 7
+      bad_data_format         = 8
+      header_not_allowed      = 9
+      separator_not_allowed   = 10
+      header_too_long         = 11
+      unknown_dp_error        = 12
+      access_denied           = 13
+      dp_out_of_memory        = 14
+      disk_full               = 15
+      dp_timeout              = 16
+      others                  = 17.
+
+  if sy-subrc <> 0.
+    message 'VISOR: Error al leer el archivo origen.' type 'E'.
+  endif.
+
+  call function 'SCMS_BINARY_TO_XSTRING'
+    exporting
+      input_length = vl_length
+    importing
+      buffer       = vl_buffer
+    tables
+      binary_tab   = t_file
+    exceptions
+      failed       = 1
+      others       = 2.
+
+  if sy-subrc <> 0.
+    message 'VISOR: Error al convertir archivo binario.' type 'E'.
+  endif.
+
+  vl_length = xstrlen( vl_buffer ).
+  while vl_length >= 1022.
+    append vl_buffer(1022) to ti_buffer.
+    shift vl_buffer by 1022 places left in byte mode.
+    vl_length = xstrlen( vl_buffer ).
+  endwhile.
+  if vl_length > 0.
+    append vl_buffer to ti_buffer.
+  endif.
+
+  call function 'DP_CREATE_URL'
+    exporting
+      type    = 'IMAGE'
+      subtype = 'PNG'
+    tables
+      data    = ti_buffer
+    changing
+      url     = p_url_stream.
+
+endform.                    " LOAD_PIC_FROM_DB
+*&---------------------------------------------------------------------*
+*&      Form  CREACION_IMAGEN_INDIVIDUAL
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_VL_URL  text
+*      -->P_VL_NOMBRE  text
+*----------------------------------------------------------------------*
+form creacion_imagen_individual  using    p_url
+                                          p_nombre.
+
+*   create the custom container
+  create object gv_container
+    exporting
+      container_name = p_nombre.
+*   create the picture control
+  create object gv_picture
+    exporting
+      parent = gv_container.
+
+  perform load_pic_from_db using p_url changing gv_url.
+
+*   load picture
+  call method gv_picture->load_picture_from_url
+    exporting
+      url = gv_url.
+
+  call method gv_picture->set_display_mode
+    exporting
+      display_mode = cl_gui_picture=>display_mode_stretch
+    exceptions
+      error        = 1
+      others       = 2.
+
+  call method gv_picture->set_3d_border
+    exporting
+      border = 10.
+
+  gv_init = 'X'.
+
+  call method cl_gui_cfw=>flush
+    exceptions
+      cntl_system_error = 1
+      cntl_error        = 2.
+  if sy-subrc <> 0.
+  endif.
+
+endform.                    " CREACION_IMAGEN_INDIVIDUAL
+*&---------------------------------------------------------------------*
+*&      Form  CARGAR_IMAGENES_HTML
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form cargar_imagenes_html using p_imagen.
+
+  if ref_cont_img is initial.
+** Instancia de objeto cont
+    create object ref_cont_img
+      exporting
+        container_name = 'AV01'.
+
+** Instancia de objeto HTML
+    create object ref_html_img
+      exporting
+        parent = ref_cont_img.
+  endif.
+
+  data: lv_url(255)  type c,
+        lv_code(255) type c,
+        lv_x(55) type c,
+        lv_y(55) type c.
+
+** Modificar los valores de las tablas.
+  refresh ti_html.
+
+** Instancia de valores.
+  lv_url = 'IMAGE.HTML'.
+
+** Creación de registro correspondiente.
+  perform insertar using '<html>'.
+  perform insertar using '<head>'.
+  perform insertar using '<title>Imagenes HTML</title>'.
+  perform insertar using '<style>'.
+  perform insertar using 'html, body, #imagen {'.
+  perform insertar using 'height: 100%;'.
+  perform insertar using 'margin: 0px;'.
+  perform insertar using 'padding: 0px;'.
+  perform insertar using 'overflow:hidden;'.
+  perform insertar using '}'.
+  perform insertar using '</style>'.
+  perform insertar using '</head>'.
+  perform insertar using '<body>'.
+  perform insertar using '<div id="imagen">'.
+  perform insertar using '<img src="'.
+  perform insertar using p_imagen.
+  perform insertar using '" width="100%" height="100%">'.
+  perform insertar using '</div>'.
+  perform insertar using '</body>'.
+  perform insertar using '</html>'.
+
+** Carga de información en HTML
+  call method ref_html_img->load_data
+    exporting
+      type         = 'TEXT'
+      subtype      = 'HTML'
+    importing
+      assigned_url = lv_url
+    changing
+      data_table   = ti_html[].
+
+  call method ref_html_img->show_data
+    exporting
+      url = lv_url.
+
+endform.                    " CARGAR_COORDENADAS
+*&---------------------------------------------------------------------*
+*&      Form  CARGAR_VISOR
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_1      text
+*----------------------------------------------------------------------*
+form cargar_visor.
+
+  data: lv_rutaimagenes type string,
+        lv_nombreimagen type string,
+        lv_im1 type char10,
+        lv_im2 type char10.
+
+  data: ti_archivos type standard table of file_info,
+        wa_archivos type file_info,
+        lv_count type i.
+
+** Verificación de parámetro inicial.
+
+  if sy-ucomm = 'DISENO'.
+    gv_nombrefolder = 'diseno'.
+  elseif sy-ucomm = 'PREVIEW'.
+    gv_nombrefolder = 'preview'.
+  elseif sy-ucomm = 'AVANCE'.
+    gv_nombrefolder = 'avance'.
+  endif.
+
+** Si no tiene asignación de carpeta asociada.
+  if gv_nombrefolder is initial.
+    gv_nombrefolder = 'avance'.
+  endif.
+
+** Leemos la ruta del servidor correspondiente.
+  read table gt_tvarvc with key name = 'ZPRCIU_RUTA_SERVER'.
+** concatenamos la ruta completa de las imágenes.
+  concatenate gt_tvarvc-low '\' wa_proyecto-codigo '\' gv_nombrefolder into lv_rutaimagenes.
+  condense lv_rutaimagenes.
+
+  call method cl_gui_frontend_services=>directory_list_files
+    exporting
+      directory                   = lv_rutaimagenes
+*     filter                      = '*.jpg'
+      files_only                  = 'X'
+*     directories_only            =
+    changing
+      file_table                  = ti_archivos
+      count                       = lv_count
+  exceptions
+    cntl_error                  = 1
+    directory_list_files_failed = 2
+    wrong_parameter             = 3
+    error_no_gui                = 4
+    not_supported_by_gui        = 5
+    others                      = 6
+          .
+  if sy-subrc <> 0.
+    message 'Error al acceder a la carpeta de imágenes' type 'E'.
+  endif.
+
+** Si viene el valor en cero, se le asigna
+** el valor del contador.
+  if gv_index_img = -1.
+    gv_index_img = lv_count.
+  endif.
+
+** Validación para carga de imágenes.
+  if ti_archivos[] is not initial and gv_index_img is initial.
+    gv_index_img = 1.
+  endif.
+
+** Seleccionamos la imagen citada en el índice y la leemos del archivo.
+  read table ti_archivos into wa_archivos index gv_index_img.
+
+  if sy-subrc = 0.
+** Marquesina para secuencia de imágenes.
+    lv_im1 = gv_index_img.
+    lv_im2 = lv_count.
+
+    condense lv_im1 no-gaps.
+    condense lv_im2 no-gaps.
+    concatenate gv_nombrefolder '( Imagen' lv_im1 'de' lv_im2 ')' into gv_imagennumero separated by space.
+** Rutas de imágenes.
+    concatenate lv_rutaimagenes '\' wa_archivos-filename into lv_nombreimagen.
+** Cargar imagenes.
+    gv_nombreimagen = lv_nombreimagen.
+    perform cargar_imagenes_html using gv_nombreimagen.
+  else.
+** Validación para códigos ingresados con ejecución.
+    if gv_index_img < 1.
+      gv_index_img = 1.
+    elseif gv_index_img > lv_count.
+      gv_index_img = lv_count.
+    endif.
+
+    if ti_archivos[] is initial.
+      gv_imagennumero = '[carpeta sin imágenes]'.
+      clear gv_nombreimagen.
+      perform cargar_imagenes_html using gv_nombreimagen.
+    endif.
+
+  endif.
+
+endform.                    " CARGAR_VISOR
+*&---------------------------------------------------------------------*
+*&      Form  BORRAR_IMAGEN
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form borrar_imagen .
+
+  data: vl_answer type c,
+        vl_rc type i.
+
+  call function 'POPUP_TO_CONFIRM'
+    exporting
+      titlebar              = 'Eliminar Imagen'
+      text_question         = '¿Desea eliminar la imagen seleccionada?'
+      text_button_1         = 'Sí'
+      text_button_2         = 'No'
+      default_button        = '2'
+      display_cancel_button = 'X'
+    importing
+      answer                = vl_answer.
+
+** Si selecciona la opción SI.
+  if vl_answer = '1'.
+
+    call method cl_gui_frontend_services=>file_delete
+      exporting
+        filename             = gv_nombreimagen
+      changing
+        rc                   = vl_rc
+      exceptions
+        file_delete_failed   = 1
+        cntl_error           = 2
+        error_no_gui         = 3
+        file_not_found       = 4
+        access_denied        = 5
+        unknown_error        = 6
+        not_supported_by_gui = 7
+        wrong_parameter      = 8
+        others               = 9.
+
+    if sy-subrc <> 0.
+      message 'Error al eliminar la imagen' type 'E'.
+    endif.
+
+    clear gv_nombreimagen.
+    gv_index_img = 1.
+    perform cargar_visor.
+
+  endif.
+
+endform.                    " BORRAR_IMAGEN
+*&---------------------------------------------------------------------*
+*&      Module  CARGAR_TIPOS_INT  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module cargar_tipos_int output.
+
+  loop at ti_tipoint.
+    select single descripcion
+    into ti_tipoint-descripcion
+    from ztprci_tipoint
+    where codigo = ti_tipoint-codigo.
+
+    if sy-subrc = 0.
+      modify ti_tipoint index sy-tabix.
+    endif.
+  endloop.
+
+endmodule.                 " CARGAR_TIPOS_INT  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  ADICIONAR_REGISTRO_INT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form adicionar_registro_int .
+
+  if ti_tipoint[] is initial.
+    clear ti_tipoint.
+    append ti_tipoint.
+  else.
+    message 'Solo se permite un TIPO DE INTERVENCIÓN.' type 'W'.
+  endif.
+
+endform.                    " ADICIONAR_REGISTRO_INT
+*&---------------------------------------------------------------------*
+*&      Form  REMOVER_REGISTRO_INT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form remover_registro_int .
+  delete ti_tipoint where sel = 'X'.
+
+  if ti_tipoint[] is initial.
+    perform adicionar_registro_int.
+  endif.
+endform.                    " REMOVER_REGISTRO_INT
+*&---------------------------------------------------------------------*
+*&      Form  ADICIONAR_REGISTRO_CONT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form adicionar_registro_cont .
+  clear ti_contrato.
+  append ti_contrato.
+endform.                    " ADICIONAR_REGISTRO_CONT
+*&---------------------------------------------------------------------*
+*&      Form  REMOVER_REGISTRO_CONT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form remover_registro_cont .
+  delete ti_contrato where sel = 'X'.
+
+  if ti_contrato[] is initial.
+    perform adicionar_registro_cont.
+  endif.
+endform.                    " REMOVER_REGISTRO_CONT
+*&---------------------------------------------------------------------*
+*&      Module  CARGAR_CONTRATOS  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module cargar_contratos output.
+
+  loop at ti_contrato.
+    select single descripcion
+                  interventor
+                  valor
+                  valyear
+    into (ti_contrato-descripcion,
+          ti_contrato-interventor,
+          ti_contrato-valor,
+          ti_contrato-valyear)
+    from ztprci_contrato
+    where codigo = ti_contrato-contrato.
+
+    if sy-subrc = 0.
+      modify ti_contrato index sy-tabix.
+    endif.
+  endloop.
+
+endmodule.                 " CARGAR_CONTRATOS  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  REMOVER_REGISTRO_IND
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form remover_registro_ind .
+  delete ti_indicador where sel = 'X'.
+
+  if ti_indicador[] is initial.
+    perform adicionar_registro_ind.
+  endif.
+endform.                    " REMOVER_REGISTRO_IND
+*&---------------------------------------------------------------------*
+*&      Form  ADICIONAR_REGISTRO_IND
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form adicionar_registro_ind .
+  clear ti_indicador.
+  append ti_indicador.
+endform.                    " ADICIONAR_REGISTRO_IND
+*&---------------------------------------------------------------------*
+*&      Module  CARGAR_INDICADORES  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module cargar_indicadores output.
+  loop at ti_indicador.
+
+** Datos del indicador.
+    select single descripcion tipo linea componente programa
+    into corresponding fields of ti_indicador
+    from ztprci_indicador
+    where codigo = ti_indicador-indicador.
+
+** Tipos de indicadores.
+    select single descripcion
+    into ti_indicador-ntipo
+    from ztprci_tipoind
+    where codigo = ti_indicador-tipo.
+
+** Tipos de líneas
+    select single descripcion
+    into ti_indicador-nlinea
+    from ztprci_linea
+    where codigo = ti_indicador-linea.
+
+** Tipos de componentes.
+    select single descripcion
+    into ti_indicador-ncomp
+    from ztprci_comp
+    where codigo = ti_indicador-componente.
+
+** Tipos de programas.
+    select single descripcion
+    into ti_indicador-nprog
+    from ztprci_prog
+    where codigo = ti_indicador-programa.
+
+    if sy-subrc = 0.
+      modify ti_indicador index sy-tabix.
+    endif.
+
+  endloop.
+
+  sort ti_indicador by tipo.
+
+endmodule.                 " CARGAR_INDICADORES  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Form  ADICIONAR_DOCUMENTO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form adicionar_documento .
+
+endform.                    " ADICIONAR_DOCUMENTO
+*&---------------------------------------------------------------------*
+*&      Form  ELIMINAR_DOCUMENTO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form eliminar_documento .
+
+endform.                    " ELIMINAR_DOCUMENTO
+*&---------------------------------------------------------------------*
+*&      Form  MOSTRAR_DOCUMENTO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form mostrar_documento .
+
+
+endform.                    " MOSTRAR_DOCUMENTO
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0209  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module user_command_0209 input.
+
+  case sy-ucomm.
+    when 'RW'.
+      clear sy-ucomm.
+      lv_control_rad = ''.
+      if lv_externo = 'X'.
+        leave program.
+      else.
+        leave to screen 0.
+      endif.
+  endcase.
+
+endmodule.                 " USER_COMMAND_0209  INPUT
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_0210  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module status_0210 output.
+
+endmodule.                 " STATUS_0210  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0210  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+module user_command_0210 input.
+  case sy-ucomm.
+
+    when 'RW'.
+      clear sy-ucomm.
+      leave to screen 0.
+  endcase.
+
+endmodule.                 " USER_COMMAND_0210  INPUT
