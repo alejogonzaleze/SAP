@@ -1,3 +1,3 @@
 # SAP
 
-Repositorio SAP para ejemplos y líneas de código ABAP. Copias de líneas de código y base de conocimiento.
+Repositorio ABAP, líneas de código ejemplo y base de conocimiento.
