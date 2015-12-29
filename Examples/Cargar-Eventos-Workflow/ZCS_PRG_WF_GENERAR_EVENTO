@@ -1,0 +1,90 @@
+************************************************************************
+************************************************************************
+**                  GENERAR EVENTOS MASIVOS PARA WORKFLOW             **
+**                                                                    **
+**                                                                    **
+**         DESARROLLADO POR: Alejandro González Estrada               **
+**         FECHA:            20.03.2013                               **
+**                                                                    **
+************************************************************************
+************************************************************************
+
+REPORT  ZCS_PRG_WF_GENERAR_EVENTO.
+
+******************************************************************************
+** NOTA: no se incluye Authority Check, debido a que el acceso se controla  **
+**       a través de roles asignados a la transacción ZWF_EVENTOS.          **
+******************************************************************************
+
+** Tablas para utilizar
+TABLES: QMEL.
+
+** Estructura de datos para tabla.
+DATA: BEGIN OF R_INFO,
+  CODIGO TYPE QMEL-QMNUM,        "Código de documento
+  DESCRIPCION TYPE SWR_MSGLIN,   "Mensaje generado para el flujo correspondiente.
+END OF R_INFO.
+
+** Tabla de datos para registros info en procesamiento.
+DATA: T_INFO LIKE R_INFO OCCURS 0 WITH HEADER LINE.
+
+** Varables locales.
+DATA: L_MENSAJE(255) TYPE C.
+
+** Cuadro de selección de documentos de avisos para generar a través del evento.
+SELECTION-SCREEN BEGIN OF BLOCK B1 WITH FRAME TITLE TEXT-001.
+** Parámetros de entrada de datos para evento.
+  PARAMETERS:  L_BUSID  TYPE SWR_STRUCT-OBJECT_TYP DEFAULT 'BUS7051',
+               L_EVENTO TYPE SWR_STRUCT-EVENT DEFAULT 'CREATED'.
+** Selección masiva de documentos de aviso.
+  SELECT-OPTIONS R_NUM FOR QMEL-QMNUM.
+SELECTION-SCREEN END OF BLOCK B1.
+
+** Al seleccionar datos correspondientes y ejecutar.
+START-OF-SELECTION.
+   LOOP AT R_NUM.
+
+** Parámetros iniciales para la ejecución del evento correspondiente.
+      DATA: L_NUMERO LIKE SWR_STRUCT-OBJECT_KEY,
+            L_SUBRC  TYPE SY-SUBRC.
+
+      L_NUMERO = R_NUM-LOW.
+      L_SUBRC  = 0.
+
+** Ejecución del evento seleccionado para ser lanzado a través de workflow.
+      CALL FUNCTION 'SAP_WAPI_CREATE_EVENT'
+        EXPORTING
+          OBJECT_TYPE             = L_BUSID
+          OBJECT_KEY              = L_NUMERO
+          EVENT                   = L_EVENTO
+*         COMMIT_WORK             = 'X'
+*         EVENT_LANGUAGE          = SY-LANGU
+*         LANGUAGE                = SY-LANGU
+*         USER                    = SY-UNAME
+*         IFS_XML_CONTAINER       =
+        IMPORTING
+          RETURN_CODE             = L_SUBRC
+*         EVENT_ID                =
+*       TABLES
+*         INPUT_CONTAINER         =
+*         MESSAGE_LINES           =
+*         MESSAGE_STRUCT          =
+                .
+
+** Verificación de ejecución de workflow.
+     CLEAR L_MENSAJE.
+
+** Se capturan los resultados correspondientes para enviar por pantalla.
+      IF L_SUBRC = 0.
+        CONCATENATE 'Documento' L_NUMERO 'Ejecutado correctamente' 'Evento:' L_EVENTO  INTO L_MENSAJE
+        SEPARATED BY SPACE.
+      ELSE.
+        CONCATENATE 'Documento' L_NUMERO 'No ejecutado' 'Evento' L_EVENTO INTO L_MENSAJE
+        SEPARATED BY SPACE.
+      ENDIF.
+
+** Mostramos mensaje correspondiente para ejecución de workflow.
+      WRITE L_MENSAJE.
+
+   ENDLOOP.
+END-OF-SELECTION.
