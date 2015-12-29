@@ -1,0 +1,42 @@
+*=======================================================
+* REPORTE NOTIFICACIONES VENCIMIENTO DE ACTIVIDADES
+*
+* DESCRIPCION: REPORTE IMPORTAR CAMPOS DESDE EXCEL.
+* ANALISTA:    ALEJANDRO GONZALEZ ESTRADA (SELECTA CONSULTING GROUP)
+* PROGRAMADOR: ALEJANDRO GONZALEZ ESTRADA (SELECTA CONSULTING GROUP)
+*--------------------------------------------------------------------------------------------------------------
+* LOG DE MODIFICACION:
+*--------------------------------------------------------------------------------------------------------------
+* FECHA 08/10/2013
+* PROGRAMADOR: ALEJANDRO GONZALEZ ESTRADA
+* CORRECCION:  DEVK9A13JF
+* DESCRIPCION: DESARROLLO INICIAL.
+*--------------------------------------------------------------------------------------------------------------
+* FECHA 05/10/2015
+* PROGRAMADOR: ALEJANDRO GONZALEZ ESTRADA
+* CORRECCION:  DEVK9A13JF
+* ARANDA:      3189
+* DESCRIPCION: Adición de método para crear registros terminados (fecha nueva).
+*--------------------------------------------------------------------------------------------------------------
+* FECHA 23/10/2015
+* PROGRAMADOR: ALEJANDRO GONZALEZ ESTRADA
+* CORRECCION:  DEVK9A1ET4
+* ARANDA:      3189
+* DESCRIPCION: Reajuste campo de carga y eliminación campo nuevo.
+*--------------------------------------------------------------------------------------------------------------
+
+** Objetos de Autorización **********************************************
+** Las autorizaciones se validarán a través de la transacción ZNEM_UPD **
+*************************************************************************
+
+report  zrpnemesis_tec07.
+** Include principal, cabecera y declaración de estructuras.
+include zrpnemesis_for01.
+** Inicio de proceso de ejecución.
+start-of-selection.
+** Selección de archivo de excel.
+  perform cargar_excel.
+
+end-of-selection.
+** Include funcionalidades principales.
+  include zrpnemesis_for02.
