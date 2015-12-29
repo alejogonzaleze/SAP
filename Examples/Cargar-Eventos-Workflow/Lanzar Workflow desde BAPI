@@ -1,0 +1,7 @@
+Módulo funciones:             SAP_WAPI_START_WORKFLOW
+
+TASK                            WS91000104 (nuestro workflow).
+LANGUAGE               ES
+DO_COMMIT            X
+USER                            WF-BATCH (para que se ejecute con el usuario de fondo).
+
