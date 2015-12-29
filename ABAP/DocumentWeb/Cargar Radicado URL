@@ -1,0 +1,17 @@
+form cargar_radicado  using   p_radicado.
+
+  data: lv_url(255)  type c,
+        lv_code(255) type c,
+        lv_x(55) type c,
+        lv_y(55) type c.
+
+** Instancia de valores.
+  concatenate 'http://documentweb.neykez.com/Pruebas/sap_details?radicado=' p_radicado
+  into lv_url.
+
+** Llamado de imágenes asociadas a documento.
+  call method ref_html2->show_url
+    exporting
+      url = lv_url.
+
+endform.                    
