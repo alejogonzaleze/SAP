@@ -1,0 +1,276 @@
+*&---------------------------------------------------------------------*
+*& Include ZRPPRCI_TOP                                       Modulpool        ZRPPRCI_PROYECTO
+*&---------------------------------------------------------------------*
+*& DESCRIPCION: PROYECTOS DE CIUDAD.
+*&
+*& LIDER    : Mónica Isabel Gómez Montoya.
+*& CONSULTOR: Alejandro González Estrada.
+*& FECHA    : 09-07-2014
+*&---------------------------------------------------------------------*
+*& LOG DE MODIFICACION:
+*&---------------------------------------------------------------------*
+* FECHA           09-07-2014
+* PROGRAMADOR     Alejandro González Estrada
+* CORRECCION      DEVK9A17UU
+* DESCRIPCION     Primera versión del programa.
+*&---------------------------------------------------------------------*
+* FECHA           10/21/2015
+* PROGRAMADOR     ALEJANDRO GONZALEZ ESTRADA
+* CORRECCION      DEVK9A17WZ
+* ARANDA          3540
+* DESCRIPCION     Adición campos proyectos de ciudad: indicadores,
+*                 tipos de contratos, tipos intervención.
+*&---------------------------------------------------------------------*
+
+program  zrpprci_proyecto.
+
+** Estructuras de tipos de proyecto.
+types: begin of ty_busqueda,
+  sel type char1,
+  codigo type	zproyciu_codigo,
+  proyecto type	zproyciu_proyecto,
+  posicion type	zproyciu_posicion,
+  nombre type	zproyciu_nombrepr,
+  vicealcaldia type zproyciu_vicealcaldia,
+end of ty_busqueda.
+
+types: begin of ty_tipo,
+  sel type char1,
+  codigo type	zproyciu_compromiso,
+  descripcion type  zproyciu_descripcion,
+end of ty_tipo.
+
+types: begin of ty_tipoint,
+  sel type char1,
+  codigo type	zproyciu_intervencion,
+  descripcion type  zproyciu_descripcion,
+end of ty_tipoint.
+
+types: begin of ty_contrato,
+  sel type char1,
+  proyecto type	zproyciu_proyecto,
+  contrato type	zproyciu_contrato,
+  descripcion	type zproyciu_descripcioncr,
+  interventor type  zproyciu_interventor,
+  valor type  zproyciu_inversion,
+  valyear	type zproyciu_year,
+end of ty_contrato.
+
+types: begin of ty_indicador,
+  sel type char1,
+  proyecto type	zproyciu_proyecto,
+  indicador type zproyciu_indicador,
+  descripcion	type zproyciu_descripcion,
+  tipo type	zproyciu_tipoind,
+  ntipo type zproyciu_descripcion,
+  linea type  zproyciu_linea,
+  nlinea type zproyciu_descripcion,
+  componente type	zproyciu_componente,
+  ncomp type zproyciu_descripcion,
+  programa type	zproyciu_programa,
+  nprog type zproyciu_descripcion,
+end of ty_indicador.
+
+types: begin of ty_comu,
+  sel type char1,
+  codigo type	zproyciu_comuna,
+  descripcion type zproyciu_descripcion,
+end of ty_comu.
+
+types: begin of ty_recursos,
+  sel type char1,
+  proyecto type	zproyciu_proyecto,
+  descripcion	type zproyciu_descripcion,
+  inversion	type zproyciu_inversion_ejec,
+end of ty_recursos.
+
+types: begin of ty_poblacion,
+  sel type char1,
+  proyecto type	zproyciu_proyecto,
+  codigo type  zproyciu_poblacion,
+  descripcion type zproyciu_descripcion,
+  valor type zproyciu_valor,
+end of ty_poblacion.
+
+types: begin of ty_pblandos,
+  sel type char1,
+  proyecto type	zproyciu_proyecto,
+  pbyear type	zproyciu_pbyear,
+  pbinversion type  zproyciu_pbinversion,
+end of ty_pblandos.
+
+types: begin of ty_etapacal,
+  etapa type  zproyciu_estado,
+  subetapa type  zproyciu_subestado,
+  avancetot type p decimals 2,
+end of ty_etapacal.
+
+types: begin of ty_etapa,
+  sel type char1,
+  proyecto type	zproyciu_codigo,
+  etapa type  zproyciu_estado,
+  descripcione type zproyciu_descripcion,
+  pesoeta type zproyciu_peso,
+  subetapa type  zproyciu_subestado,
+  descripcions type zproyciu_descripcion,
+  pesosub type zproyciu_peso,
+  ini_prog type	zproyciu_fechaprog,
+  fin_prog type	zproyciu_fechaprog,
+  ini_ejec type	zproyciu_fechaejec,
+  fin_ejec type	zproyciu_fechaejec,
+
+** VALORES CALCULADOS ***************
+  fec_actual      type datum,
+  duracion        type p decimals 0,
+  dias_ejecutados type p decimals 0,
+*************************************
+
+  inversion_prog type	zproyciu_inversion_prog,
+  inversion_ejec type	zproyciu_inversion_ejec,
+  porcobpr type	zproyciu_porcobpr,
+  porcobej type	zproyciu_porcobej,
+
+*************************************
+  estado type icon_text,
+*************************************
+
+  retraso type zproyciu_porcretr,
+  motivo type	zproyciu_motivo,
+end of ty_etapa.
+
+types: begin of ty_log,
+  proyecto type ztprci_log-proyecto,
+  fecha type ztprci_log-fecha,
+  hora  type ztprci_log-hora,
+  usuario type ztprci_log-usuario,
+  campo type ztprci_log-campo,
+  motivo type ztprci_log-motivo,
+end of ty_log.
+
+** Tablas internas y áreas de trabajo de proyecto
+data: ti_busqueda type ty_busqueda occurs 0 with header line,
+      ti_tipo type ty_tipo occurs 0 with header line,
+      ti_tipoint type ty_tipoint occurs 0 with header line,
+      ti_contrato type ty_contrato occurs 0 with header line,
+      ti_indicador type ty_indicador occurs 0 with header line,
+      ti_log type ztprci_log occurs 0 with header line,
+      ti_logmod type ty_log occurs 0 with header line,
+      ti_comuna type ty_comu occurs 0 with header line,
+      ti_recursos type ty_recursos occurs 0 with header line,
+      ti_recursos_ini type ty_recursos occurs 0 with header line,
+      ti_poblacion type ty_poblacion occurs 0 with header line,
+      ti_etapa type ty_etapa occurs 0 with header line,
+      ti_pblandos type ty_pblandos occurs 0 with header line,
+      ti_line type table of tline,
+
+      wa_proyecto type ztprci_proyecto,
+      wa_proyecto_ini type ztprci_proyecto,
+      wa_line type tline.
+
+** Campos de dynpro.
+data: lv_codigo   type ztprci_proyecto-codigo,
+      lv_control_map type c,
+      lv_control_rad type c,
+      lv_externo type c,
+      lv_salida  type c,
+      lv_proyecto type ztprci_proyecto-proyecto,
+      lv_nombrepr   type ztprci_proyecto-nombre,
+      lv_vicecod    type ztprci_proyecto-vicealcaldia,
+      lv_tipopr    type ztprci_proyecto-tipopr,
+      lv_tipopr_text type ztprci_tipopr-descripcion,
+      lv_sistema type ztprci_sistema-descripcion,
+      lv_subsistema type ztprci_sistema-descripcion,
+      lv_vicealcaldia type ztprci_vicealcal-descripcion,
+      lv_tipopr1 type ztprci_tipopr-descripcion,
+      lv_entidad   type ztprci_entidad-descripcion,
+      lv_icono    type ztprci_icono-descripcion,
+      lv_logoicono type icon_text,
+      lv_etapa    type ztprci_estado-descripcion,
+      lv_subetapa type ztprci_subestado-descripcion,
+      lv_invej type ztprci_proyecto-inversion_ejec,
+      lv_invej2 type ztprci_proyecto-inversion_ejec,
+      lv_porc1 type ztprci_proyecto-inversion_ejec,
+      lv_diferencia type zproyciu_porcobej,
+      lv_nuevo type c,
+
+** Estados sugeridos y calculados de la aplicación.
+      lv_estadoicon type icon_text,
+      lv_descripcionicon type char50,
+      lv_estadoiconr type icon_text,
+      lv_descripcioniconr type char50.
+
+** Control de HTML.
+data : ref_cont type ref to cl_gui_custom_container,
+       ref_html type ref to cl_gui_html_viewer,
+       ref_cont_img type ref to cl_gui_custom_container,
+       ref_html_img type ref to cl_gui_html_viewer,
+
+       wa_html(255) type c,
+       ti_html type table of char255.
+
+** Control de HTML para radicados.
+data : ref_cont2 type ref to cl_gui_custom_container,
+       ref_html2 type ref to cl_gui_html_viewer,
+       ref_cont2_img type ref to cl_gui_custom_container,
+       ref_html2_img type ref to cl_gui_html_viewer,
+
+       wa_html2(255) type c,
+       ti_html2 type table of char255.
+
+** Información para casilla de texto en pestaña seguimiento.
+data: g_editor type ref to cl_gui_textedit,
+      g_editor_container type ref to cl_gui_custom_container,
+      g_ok_code like sy-ucomm,
+      g_repid like sy-repid,
+      lv_name(70) type c.
+
+constants: c_line_length type i value 132.
+
+* define table type for data exchange
+types: begin of mytable_line,
+         line(c_line_length) type c,
+       end of mytable_line.
+
+* table to exchange text
+data: g_mytable type table of mytable_line,
+      g_mytable2 type table of mytable_line.
+
+data: wa_mytable type mytable_line.
+* necessary to flush the automation queue
+class cl_gui_cfw definition load.
+
+data: gv_input like rlgrap-filename,
+      gv_file  like rlgrap-filename,
+      gv_path_ini    type string,
+      gv_path_sel    type string,
+      gv_chkmasivo   type c.
+
+** Leemos registros de salida de parámetros.
+data: gt_tvarvc  type tvarvc occurs 0 with header line,
+      gv_diseno  type c,
+      gv_avance  type c,
+      gv_preview type c.
+
+** botones de salida para control.
+data: gv_diseno1  type c,
+      gv_avance1  type c,
+      gv_preview1 type c.
+
+** Declaración para proceso de carga.
+data: vg_source       type string,
+      vg_destin       type string,
+      vg_destin_file  type string,
+      vg_except       type char30,
+      vg_result       type abap_bool.
+
+** Edición de imágenes.
+data: gv_container type ref to cl_gui_custom_container,
+      gv_picture type ref to cl_gui_picture,
+      gv_url(132),
+      gv_init,
+      gv_index_img type i,
+      gv_imagennumero type char30,
+      gv_nombrefolder type char10,
+      gv_nombreimagen type string.
+
+class cl_gui_cfw definition load.
