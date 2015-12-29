@@ -1,0 +1,450 @@
+*----------------------------------------------------------------------*
+***INCLUDE ZCS_NOTIFICACIONES_WFCD_F01 .
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&      Form  F_NOTIF_AVISOS_RADI
+*&---------------------------------------------------------------------*
+*       Se realiza el procesamiento de datos requerido para el envío de
+*       la notificación de los avisos de Control Disciplinario que fueron
+*       creados hace 2 meses y aún tienen el estatus de usuario RADI (radicado).
+*----------------------------------------------------------------------*
+FORM f_notif_avisos_radi.
+* Obtener avisos
+  PERFORM f_obtener_avisos CHANGING ti_qmel.
+
+* Se inicia el workflow
+  PERFORM f_iniciar_workflow USING ti_qmel
+                                 '1'. " Indicador de notificación
+ENDFORM.                    " F_NOTIF_AVISOS_RADI
+*&---------------------------------------------------------------------*
+*&      Form  F_OBTENER_AVISOS
+*&---------------------------------------------------------------------*
+*       Se realiza INNER JOIN entre las tablas JEST y QMEL para obtener los
+*       avisos que tengan como estatus de usuario activo el estatus radicado
+*       (RADI = E0001).
+*----------------------------------------------------------------------*
+*      <--Pti_qmel  Tabla interna para avisos
+*----------------------------------------------------------------------*
+FORM f_obtener_avisos CHANGING pti_qmel LIKE ti_qmel.
+  IF vg_fecha IS INITIAL.
+*   Se obtiene la fecha de la consulta
+    PERFORM f_obtener_fecha USING    sy-datum '2' '-'
+                            CHANGING vg_fecha.
+  ENDIF.
+
+
+  SELECT a~objnr INTO CORRESPONDING FIELDS OF TABLE pti_qmel
+                 FROM jest AS a INNER JOIN qmel AS b
+                 ON a~objnr = b~objnr
+                 WHERE a~stat = 'E0001'   " Radicado
+                 AND   a~inact = space    " Activo
+                 AND   b~qmart = 'A1'
+                 AND   erdat = vg_fecha.
+ENDFORM.                    " F_OBTENER_AVISOS
+*&---------------------------------------------------------------------*
+*&      Form  F_INICIAR_WORKFLOW
+*&---------------------------------------------------------------------*
+*       Se inicia el workflow de las notificaciones.  La variable 'p_ind'
+*       es un indicador de proceso que se utiliza a nivel del workflow
+*       para determinar el tipo de notificación que se debe realizar.
+*----------------------------------------------------------------------*
+*      -->Pti_qmel  text
+*      -->P_ind   text
+*----------------------------------------------------------------------*
+FORM f_iniciar_workflow USING pti_qmel LIKE ti_qmel
+                            p_ind    TYPE c.
+
+  IF p_ind EQ '1'.      " Notificación estatus de usuario del aviso = RADI
+    IF NOT pti_qmel IS INITIAL.
+*     Para cada aviso se inicia un workflow
+      LOOP AT pti_qmel INTO wa_qmel.
+        SHIFT wa_qmel-objnr LEFT DELETING LEADING 'QM'.
+        vg_objkey = wa_qmel-objnr.
+*       Se crea el evento
+        PERFORM f_crear_evento USING 'BUS2080'              " Tipo de objeto
+                                     'ZWENotificacionesCD'  " Evento
+                                     vg_objkey              " Clave - Número del aviso
+                                     p_ind.                 " Indicador de proceso a realizar
+        CLEAR vg_texto.
+        CONCATENATE 'Aviso N°' vg_objkey '- Notificación enviada' INTO vg_texto SEPARATED BY space.
+        WRITE vg_texto.
+        SKIP.
+        CLEAR: wa_qmel, vg_objkey.
+      ENDLOOP.
+    ENDIF.
+  ELSEIF p_ind EQ '2'.  " Notificación estatus de usuario del aviso = INDA o INVE - 3 meses
+    IF NOT pti_qmel IS INITIAL.
+*     Para cada aviso se inicia un workflow
+      LOOP AT pti_qmel INTO wa_qmel.
+        vg_objkey = wa_qmel-qmnum.
+*       Se crea el evento
+        PERFORM f_crear_evento USING 'BUS2080'              " Tipo de objeto
+                                     'ZWENotificacionesCD'  " Evento
+                                     vg_objkey               " Clave - Número del aviso
+                                     p_ind.                 " Indicador de proceso a realizar
+        CLEAR vg_texto.
+        CONCATENATE 'Aviso N°' vg_objkey '- Notificación enviada' INTO vg_texto SEPARATED BY space.
+        WRITE vg_texto.
+        SKIP.
+        CLEAR wa_qmel.
+      ENDLOOP.
+    ENDIF.
+  ELSEIF p_ind EQ '3'.  " Notificación estatus de usuario del aviso = INDA o INVE - 4 meses
+    IF NOT pti_qmel IS INITIAL.
+*     Para cada aviso se inicia un workflow
+      LOOP AT pti_qmel INTO wa_qmel.
+        vg_objkey = wa_qmel-qmnum.
+*       Se crea el evento
+        PERFORM f_crear_evento USING 'BUS2080'              " Tipo de objeto
+                                     'ZWENotificacionesCD'  " Evento
+                                     vg_objkey               " Clave - Número del aviso
+                                     p_ind.                 " Indicador de proceso a realizar
+        CLEAR vg_texto.
+        CONCATENATE 'Aviso N°' vg_objkey '- Notificación enviada' INTO vg_texto SEPARATED BY space.
+        WRITE vg_texto.
+        SKIP.
+        CLEAR wa_qmel.
+      ENDLOOP.
+    ENDIF.
+  ELSEIF p_ind EQ '4'.  " Notificación por fecha de notificación del auto de pliego de cargos a 45 días
+    IF NOT pti_qmel IS INITIAL.
+*     Para cada aviso se inicia un workflow
+      LOOP AT pti_qmel INTO wa_qmel.
+        SHIFT wa_qmel-objnr LEFT DELETING LEADING 'QM'.
+        vg_objkey = wa_qmel-objnr.
+*       Se crea el evento
+        PERFORM f_crear_evento USING 'BUS2080'              " Tipo de objeto
+                                     'ZWENotificacionesCD'  " Evento
+                                     vg_objkey              " Clave - Número del aviso
+                                     '2'.                   " Indicador de proceso a realizar
+        CLEAR vg_texto.
+        CONCATENATE 'Aviso N°' vg_objkey '- Notificación enviada' INTO vg_texto SEPARATED BY space.
+        WRITE vg_texto.
+        SKIP.
+        CLEAR: wa_qmel, vg_objkey.
+      ENDLOOP.
+    ENDIF.
+  ELSEIF p_ind EQ '5'.  " Notificación por fecha de notificación del auto de pliego de cargos a 75 días
+    IF NOT pti_qmel IS INITIAL.
+*     Para cada aviso se inicia un workflow
+      LOOP AT pti_qmel INTO wa_qmel.
+        SHIFT wa_qmel-objnr LEFT DELETING LEADING 'QM'.
+        vg_objkey = wa_qmel-objnr.
+*       Se crea el evento
+        PERFORM f_crear_evento USING 'BUS2080'              " Tipo de objeto
+                                     'ZWENotificacionesCD'  " Evento
+                                     vg_objkey              " Clave - Número del aviso
+                                     '3'.                   " Indicador de proceso a realizar
+        CLEAR vg_texto.
+        CONCATENATE 'Aviso N°' vg_objkey '- Notificación enviada' INTO vg_texto SEPARATED BY space.
+        WRITE vg_texto.
+        SKIP.
+        CLEAR: wa_qmel, vg_objkey.
+      ENDLOOP.
+    ENDIF.
+  ENDIF.
+ENDFORM.                    " F_INICIAR_WORKFLOW
+*&---------------------------------------------------------------------*
+*&      Form  F_NOTIF_AVISOS_INDA
+*&---------------------------------------------------------------------*
+*       Se realiza el procesamiento de datos requerido para crear el evento
+*       que inicia el workflow de la notificación de los avisos con estatus
+*       de usuario INDA (Indagación preliminar) y cuyo auto correspondiente
+*       haya sido APROBADO hace 3 y 4 meses.
+*       La notificación a los 3 meses se envía al abogado responsable.
+*       La notificación a los 4 meses se envía al Director.
+*----------------------------------------------------------------------*
+FORM f_notif_avisos_inda.
+  CLEAR ti_qmel.
+* Consultar historial de autos - 3 meses atrás
+  PERFORM f_consultar_histauto USING    '3'
+                                        'INDA'
+                               CHANGING ti_qmel.
+
+* Se inicia el workflow
+  PERFORM f_iniciar_workflow USING ti_qmel
+                                   '2'. " Indicador de notificación
+
+  CLEAR ti_qmel.
+* Consultar historial de autos - 4 meses atrás
+  PERFORM f_consultar_histauto USING    '4'
+                                        'INDA'
+                               CHANGING ti_qmel.
+
+* Se inicia el workflow
+  PERFORM f_iniciar_workflow USING ti_qmel
+                                   '3'. " Indicador de notificación
+ENDFORM.                    " F_NOTIF_AVISOS_INDA
+*&---------------------------------------------------------------------*
+*&      Form  F_CONSULTAR_HISTAUTO
+*&---------------------------------------------------------------------*
+*       Se consulta la tabla ZAUTO (Documentos de Autos de Control Disciplinario)
+*       para obtener los avisos con estatus activo INDA y con fecha de
+*       aprobación hace 3 y 4 meses.
+*----------------------------------------------------------------------*
+*      -->p_meses   Número de meses
+*      -->p_estatus Estatus de usuario
+*      <--Pti_qmel  Avisos
+*----------------------------------------------------------------------*
+FORM f_consultar_histauto USING  p_meses   TYPE numc2
+                                 p_estatus LIKE zauto-txt04
+                        CHANGING pti_qmel  LIKE ti_qmel.
+
+* Se obtiene la fecha de la consulta
+  PERFORM f_obtener_fecha USING    sy-datum p_meses '-'
+                          CHANGING vg_fecha.
+
+* Se consulta el historial de autos
+  SELECT qmnum INTO CORRESPONDING FIELDS OF TABLE pti_qmel
+               FROM zauto
+               WHERE txt04 = p_estatus
+               AND   activo = 'X'        " Estatus activo
+               AND   datact = vg_fecha.  " Fecha de aprobación
+ENDFORM.                    " F_CONSULTAR_HISTAUTO
+*&---------------------------------------------------------------------*
+*&      Form  F_OBTENER_FECHA
+*&---------------------------------------------------------------------*
+*       Se obtiene una fecha que se encuentre a 'p_meses' de la fecha actual.
+*       La fecha puede estar en el pasado o en el futuro, dependiendo del
+*       signo que se indique en la variable 'p_oper'.
+*----------------------------------------------------------------------*
+*      -->P_DATUM  Fecha de ejecución
+*      -->P_meses  Número de meses
+*      -->P_oper   Operación (+ o -)
+*      <--P_FECHA  Fecha obtenida
+*----------------------------------------------------------------------*
+FORM f_obtener_fecha USING  p_datum LIKE sy-datum
+                            p_meses TYPE numc2
+                            p_oper  TYPE char1
+                   CHANGING p_fecha LIKE sy-datum.
+
+* Se obtiene fecha 'p_meses' meses atrás
+  CALL FUNCTION 'RP_CALC_DATE_IN_INTERVAL'
+    EXPORTING
+      date      = p_datum
+      days      = '00'
+      months    = p_meses
+      signum    = p_oper
+      years     = '00'
+    IMPORTING
+      calc_date = p_fecha.
+ENDFORM.                    " F_OBTENER_FECHA
+*&---------------------------------------------------------------------*
+*&      Form  F_CREAR_EVENTO
+*&---------------------------------------------------------------------*
+*       Se crea el evento que inicia el workflow.
+*----------------------------------------------------------------------*
+*      -->P_objeto  Tipo de objeto
+*      -->P_evento  Evento
+*      -->P_OBJKEY  Clave
+*      -->P_IND     Indicador de proceso
+*----------------------------------------------------------------------*
+FORM f_crear_evento USING p_objeto LIKE swetypecou-objtype
+                          p_evento LIKE swetypecou-event
+                          p_objkey LIKE sweinstcou-objkey
+                          p_ind    TYPE c.
+
+* Se define e inicializa el contenedor
+  swc_container container.
+  swc_create_container container.
+
+  swc_create_object vg_object p_objeto p_objkey.     " Se instancia el objeto de negocio
+  swc_create_element container 'Ind'.               " Se crea el elemento Ind en el contenedor
+  swc_set_element container 'Ind' p_ind.
+
+* Se crea el evento que inicia el workflow
+  CALL FUNCTION 'SWE_EVENT_CREATE'
+    EXPORTING
+      objtype           = p_objeto
+      objkey            = p_objkey
+      event             = p_evento
+    IMPORTING
+      event_id          = vg_eventid
+    TABLES
+      event_container   = container
+    EXCEPTIONS
+      objtype_not_found = 1
+      OTHERS            = 2.
+
+  IF sy-subrc EQ 0.
+    COMMIT WORK.
+  ENDIF.
+ENDFORM.                    " F_CREAR_EVENTO
+*&---------------------------------------------------------------------*
+*&      Form  F_NOTIF_AVISOS_INVE
+*&---------------------------------------------------------------------*
+*       Se realiza el procesamiento de datos requerido para crear el evento
+*       que inicia el workflow de la notificación de los avisos con estatus
+*       de usuario INVE (Investigación disciplinaria) y cuyo auto correspondiente
+*       haya sido aprobado hace 3 y 4 meses.
+*       La notificación a los 3 meses se envía al abogado responsable.
+*       La notificación a los 4 meses se envía al Director.
+*----------------------------------------------------------------------*
+FORM f_notif_avisos_inve.
+  CLEAR ti_qmel.
+* Consultar historial de autos - 3 meses atrás
+  PERFORM f_consultar_histauto USING   '3'
+                                       'INVE'
+                              CHANGING ti_qmel.
+
+* Se inicia el workflow
+* El indicador de notificación es el mismo que el de la notificación INDA (Indagación preliminar)
+* porque los textos son los mismos.
+  PERFORM f_iniciar_workflow USING ti_qmel
+                                   '2'. " Indicador de notificación
+
+  CLEAR ti_qmel.
+* Consultar historial de autos - 4 meses atrás
+  PERFORM f_consultar_histauto USING    '4'
+                                        'INVE'
+                               CHANGING ti_qmel.
+
+* Se inicia el workflow
+* El indicador de notificación es el mismo que el de la notificación INDA (Indagación preliminar)
+* porque los textos son los mismos.
+  PERFORM f_iniciar_workflow USING ti_qmel
+                                   '3'. " Indicador de notificación
+ENDFORM.                    " F_NOTIF_AVISOS_INVE
+*&---------------------------------------------------------------------*
+*&      Form  F_NOTIF_AVISOS_CARG
+*&---------------------------------------------------------------------*
+*       Se consultan los datos requeridos para el envío de las notificaciones
+*       de los avisos que tengan fecha de notificación del pliego de cargos
+*       de hace 45 y 75 días hábiles.
+*----------------------------------------------------------------------*
+FORM f_notif_avisos_carg.
+  CLEAR ti_qmel.
+* Se obtiene fecha habil 45 días atrás
+  PERFORM f_obtener_fecha_habil USING    sy-datum '45'
+                                CHANGING vg_fecha.
+
+* Se consulta el historial de autos
+  PERFORM f_consultar_histauto_carg USING    vg_fecha
+                                    CHANGING ti_qmel.
+
+* Se inicia el workflow
+  PERFORM f_iniciar_workflow USING ti_qmel
+                                   '4'. " Indicador de notificación
+
+  CLEAR: ti_qmel, vg_fecha.
+* Se obtiene fecha habil 75 días atrás
+  PERFORM f_obtener_fecha_habil USING    sy-datum '75'
+                                CHANGING vg_fecha.
+
+* Se consulta el historial de autos
+  PERFORM f_consultar_histauto_carg USING    vg_fecha
+                                    CHANGING ti_qmel.
+
+* Se inicia el workflow
+  PERFORM f_iniciar_workflow USING ti_qmel
+                                   '5'. " Indicador de notificación
+ENDFORM.                    " F_NOTIF_AVISOS_CARG
+*&---------------------------------------------------------------------*
+*&      Form  F_OBTENER_FECHA_HABIL
+*&---------------------------------------------------------------------*
+*       Se utiliza el módulo de función 'DATE_CONVERT_TO_FACTORYDATE' para
+*       obtener una fecha habil que se encuentre a 'p_dias' días hábiles
+*       en el pasado.
+*----------------------------------------------------------------------*
+*      -->P_DATUM  Fecha de referencia
+*      -->P_dias   Días hábiles hacia atras
+*      <--p_fechab Fecha habil en el pasado
+*----------------------------------------------------------------------*
+FORM f_obtener_fecha_habil USING   p_datum     LIKE sy-datum
+                                   p_dias      TYPE i
+                          CHANGING p_fechab LIKE sy-datum.
+
+  DATA: vl_fechafin LIKE sy-datum, " Fecha final
+        vl_ind      TYPE c,        " Variable para working indicator
+        vl_cont     TYPE i,        " Contador para número de días
+        vl_flag     TYPE i.        " Indicador para control de días
+
+  vl_flag = p_dias + 1.
+  CALL FUNCTION 'DATE_CONVERT_TO_FACTORYDATE'
+    EXPORTING
+      correct_option       = '-'
+      date                 = p_datum
+      factory_calendar_id  = 'CO'
+    IMPORTING
+      date                 = vl_fechafin
+      workingday_indicator = vl_ind.
+
+  IF vl_ind EQ space. " Si el día actual es hábil
+    vl_cont = 0.
+    WHILE vl_cont < vl_flag.
+      CALL FUNCTION 'DATE_CONVERT_TO_FACTORYDATE'
+        EXPORTING
+          correct_option       = '-'
+          date                 = vl_fechafin
+          factory_calendar_id  = 'CO'
+        IMPORTING
+          date                 = vl_fechafin
+          workingday_indicator = vl_ind.
+
+      IF sy-subrc EQ 0.
+        IF vl_cont NE p_dias.
+          vl_fechafin = vl_fechafin - 1.
+        ENDIF.
+        vl_cont = vl_cont + 1.
+      ENDIF.
+    ENDWHILE.
+    IF vl_cont EQ vl_flag.
+      p_fechab = vl_fechafin.
+    ENDIF.
+  ELSE.              " Si el día actual no es hábil
+    vl_cont = 1.
+    WHILE vl_cont < vl_flag.
+      CALL FUNCTION 'DATE_CONVERT_TO_FACTORYDATE'
+        EXPORTING
+          correct_option       = '-'
+          date                 = vl_fechafin
+          factory_calendar_id  = 'CO'
+        IMPORTING
+          date                 = vl_fechafin
+          workingday_indicator = vl_ind.
+
+      IF sy-subrc EQ 0.
+        IF vl_cont NE p_dias.
+          vl_fechafin = vl_fechafin - 1.
+        ENDIF.
+        vl_cont = vl_cont + 1.
+      ENDIF.
+    ENDWHILE.
+    IF vl_cont EQ vl_flag.
+      p_fechab = vl_fechafin.
+    ENDIF.
+  ENDIF.
+ENDFORM.                    " F_OBTENER_FECHA_HABIL
+*&---------------------------------------------------------------------*
+*&      Form  F_CONSULTAR_HISTAUTO_CARG
+*&---------------------------------------------------------------------*
+*       Se consulta la tabla del historial de autos
+*----------------------------------------------------------------------*
+*      -->P_FECHA   Fecha de la consulta
+*      <--Pti_qmel  Tabla interna de avisos
+*----------------------------------------------------------------------*
+FORM f_consultar_histauto_carg USING    p_fecha  LIKE sy-datum
+                               CHANGING pti_qmel LIKE ti_qmel.
+
+  DATA: ti_qmeltmp TYPE STANDARD TABLE OF st_qmel,
+        wa_qmeltmp LIKE LINE OF ti_qmeltmp.
+
+  SELECT qmnum INTO CORRESPONDING FIELDS OF TABLE ti_qmeltmp
+               FROM zauto
+               WHERE fecha_notif = p_fecha. " Fecha de notificación
+  IF sy-subrc EQ 0.
+    LOOP AT ti_qmeltmp INTO wa_qmeltmp.
+      CONCATENATE 'QM' wa_qmeltmp-qmnum INTO wa_qmeltmp-objnr.
+      MODIFY ti_qmeltmp FROM wa_qmeltmp.
+      CLEAR wa_qmeltmp.
+    ENDLOOP.
+
+*   Solo se consideran los avisos con estatus de usuario activo igual a 'E0009' (CARG)
+    SELECT objnr INTO CORRESPONDING FIELDS OF TABLE pti_qmel
+                 FROM jest
+                 FOR ALL ENTRIES IN ti_qmeltmp
+                 WHERE objnr = ti_qmeltmp-objnr
+                 AND   stat = 'E0009'
+                 AND   inact = space.
+  ENDIF.
+ENDFORM.                    " F_CONSULTAR_HISTAUTO_CARG
