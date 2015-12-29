@@ -1,0 +1,484 @@
+*===========================================================================================*
+* INCLUDE ZICAD_RP_ANULACIONES_TOP                                                      *
+*===========================================================================================*
+* DESCRIPCION: Se requiere crear programa y transacción que permita la anulación de las     *
+*              declaraciones ReteICA no pagadas en el plazo definido.                       *
+*===========================================================================================*
+* ANALISTA:    Diego Hernán Gómez Jaramillo.                                                *
+* PROGRAMADOR: Alejandro González Estrada.                                                  *
+*===========================================================================================*
+
+*--------------------------------------------------------------------------------------------
+* LOG DE MODIFICACION
+*--------------------------------------------------------------------------------------------
+* FECHA           14/10/2015
+* PROGRAMADOR     Alejandro González Estrada
+* CORRECCION      DEVK9A1FCI
+* DESCRIPCION     Versión inicial del programa.
+* ARANDA          3471
+*--------------------------------------------------------------------------------------------
+
+*********************************************************************************************
+** NOTA AUTHORITY-CHECK                                                                    **
+*********************************************************************************************
+** No es necesario AUTHORITY-CHECK debido a que las autorizaciones                         **
+** del programa se controlan a través de la transacción asociada.                          **
+*********************************************************************************************
+
+*&---------------------------------------------------------------------*
+*&      Form  F_CONSULTAR_INFORMACION
+*&---------------------------------------------------------------------*
+*       Consulta de información para verificación de registros de
+**      declaraciones con los parámetros ingresados.
+*----------------------------------------------------------------------*
+form f_consultar_informacion .
+
+  data: lv_venc   type c, "Indicador de factura vencida.
+        lv_comp   type c, "Indicador de factura compensada.
+        lv_nocomp type c, "Indicador de factura no compensada.
+        lv_augrd  type c, "Indicador de anulación.
+        lv_estado_ant like ztica_ftokri-estado.
+
+** Validaciones de parámetros.
+  if    so_fech is initial
+    and pa_year is initial
+    and pa_bime is initial
+    and pa_nrdo is initial.
+    message 'Debe elegir fecha, año/bimestre, documento a procesar.' type 'I'.
+    return.
+  endif.
+
+** Validación de parámetro año/bimestre.
+  if pa_year is not initial
+   and pa_bime is initial.
+    message 'Debe elegir año/bimestre en conjunto.' type 'I'.
+    return.
+  endif.
+
+** Validación de parámetro año/bimestre.
+  if pa_bime is not initial
+   and pa_year is initial.
+    message 'Debe elegir año/bimestre en conjunto.' type 'I'.
+    return.
+  endif.
+
+** Proceso validado para iniciar consulta de forma correcta.
+  vg_valid = 'X'.
+
+** Se seleccionan los registros correspondientes para los formatos
+** acuerdo a los parámetros ingresados, los cuales se encuentren en estado
+** diferente de anulada.
+
+  if pa_year is initial and pa_bime is initial.
+    if pa_nrdo is initial.
+      "Consulta solo por la fecha.
+      select gjahr bimestre nr_docto consecutivo fecha_nc as fecha estado doc_sd
+      into table ti_salida
+      from ztica_ftokri
+      where fecha_nc in so_fech
+      and estado   ne 'A'
+      and estado   ne 'DI'
+      order by consecutivo descending.
+    else.
+      "Consulta por fecha y número de documento.
+      select gjahr bimestre nr_docto consecutivo fecha_nc as fecha estado doc_sd
+      into table ti_salida from ztica_ftokri
+      where fecha_nc in so_fech
+      and nr_docto eq pa_nrdo
+      and estado   ne 'A'
+      and estado   ne 'DI'
+      order by consecutivo descending.
+    endif.
+  else.
+    "Consulta por fecha año y bimestre.
+    if pa_nrdo is initial.
+      select gjahr bimestre nr_docto consecutivo fecha_nc as fecha estado doc_sd
+      into table ti_salida
+      from ztica_ftokri
+      where fecha_nc in so_fech
+      and gjahr    = pa_year
+      and bimestre = pa_bime
+      and estado   ne 'A'
+      and estado   ne 'DI'
+      order by consecutivo descending.
+    else.
+      "Consulta por fecha, año, bimestre y número de documento.
+      select gjahr bimestre nr_docto consecutivo fecha_nc as fecha estado doc_sd
+      into table ti_salida from ztica_ftokri
+      where fecha_nc in so_fech
+      and nr_docto eq pa_nrdo
+      and gjahr    = pa_year
+      and bimestre = pa_bime
+      and estado   ne 'A'
+      and estado   ne 'DI'
+      order by consecutivo descending.
+    endif.
+  endif.
+
+** Para cada registro se buscan los números de factura asociados.
+  loop at ti_salida assigning <fs_salida>.
+
+    select single vbeln
+    into <fs_salida>-vbeln
+    from vbfa
+    where vbelv = <fs_salida>-doc_sd
+    and vbtyp_n = 'M'.
+
+** Procesamiento de factura no encontrada.
+    if sy-subrc <> 0.
+      <fs_salida>-observacion = 'ERROR: Factura no encontrada en SD.'.
+      continue.
+    endif.
+
+** Buscamos documento de partner con BAPI Z creada para dicho fin.
+    clear: vg_gpart, vg_bsort.
+    vg_bsort = <fs_salida>-nr_docto.
+
+    call function 'ZFPSCD_BUSCAR_SORT2'
+      exporting
+        im_bu_sort2 = vg_bsort
+      importing
+        ex_partner  = vg_gpart
+      exceptions
+        not_found   = 1
+        others      = 2.
+
+** Si el partner no es encontrado y se presenta un error en la función.
+    if sy-subrc <> 0.
+      if sy-subrc = 1.
+        <fs_salida>-observacion = 'ERROR: Partner no encontrado.'.
+        continue.
+      endif.
+    endif.
+
+** Llevamos el partner capturado en BSORT.
+    condense vg_bsort no-gaps.
+    <fs_salida>-gpart =  vg_gpart.
+
+** Verificamos los documentos asociados al partner.
+    call function 'FKK_BP_LINE_ITEMS_SELECT'
+      exporting
+        i_gpart       = <fs_salida>-gpart
+        ix_gpart      = 'X'
+        i_clear_table = 'X'
+      importing
+        e_count       = vg_count
+      tables
+        pt_fkkop      = ti_fkkop.
+
+** Filtramos registros tipo D3 de RETEICA.
+    delete ti_fkkop where blart    <> 'D3'. "Solo se dejan registros de tipo D3.
+    delete ti_fkkop where vktyp_ps <> '25'. "Solo se dejan registros de tipo ReteICA.
+
+** Convertimos referencia de factura para solo tomar como referencia
+** la factura asociada.
+    call function 'CONVERSION_EXIT_ALPHA_INPUT'
+      exporting
+        input  = <fs_salida>-vbeln
+      importing
+        output = vg_xblnr.
+
+    delete ti_fkkop where xblnr <> vg_xblnr.
+
+** Se verifica con las partidas existente si la factura se encuentra vencida.
+    if ti_fkkop[] is initial.
+      <fs_salida>-observacion = 'NOTIF: No existen partidas para factura.'.
+      continue.
+    endif.
+
+** Indicador de factura vencida, compensación y no compensación por posiciones.
+    clear: lv_venc,
+           lv_comp,
+           lv_nocomp,
+           lv_augrd.
+
+** Verificación de facturas no compensadas.
+    loop at ti_fkkop assigning <fs_fkkop>.
+
+      if <fs_fkkop>-augst is initial.
+        lv_nocomp = 'X'. "Indicador de factura no compensada.
+      else.
+        lv_comp = 'X'.   "Indicador de factura compensada.
+      endif.
+
+      if <fs_fkkop>-augdt is not initial. "Si la posición tiene fecha de compensación.
+        if <fs_fkkop>-faedn < <fs_fkkop>-augdt.
+          lv_venc = 'X'.  "Indicador de factura vencida.
+        endif.
+      else. "Si no tiene fecha de compensación, se verifica el vencimiento con la fecha del día.
+        if <fs_fkkop>-faedn < sy-datum.
+          lv_venc = 'X'.  "Indicador de factura vencida.
+        endif.
+      endif.
+
+      if <fs_fkkop>-augrd = '05'. "Indicador de motivo compensación con anulación.
+        lv_augrd = 'X'.
+      endif.
+
+    endloop.
+
+** Si la posición se encuentra vencida se realiza el proceso de anulación.
+** de lo contrario, se marca como factura no vencida.
+    if lv_comp = 'X' and lv_nocomp = 'X'. "Se encuentra pago parcial (no se continúa proceso).
+      <fs_salida>-observacion = 'NOTIF: Factura pago parcial.'.
+      continue.
+    elseif lv_comp = 'X' and lv_augrd = ''.   "Si se encuentra compensada pero no anulada (se marca como pagada) y se busca vencimiento.
+      if lv_venc is initial.
+        <fs_salida>-observacion = 'NOTIF: Factura pagada.'.
+      else.
+        <fs_salida>-observacion = 'NOTIF: Factura pago extemporáneo.'.
+      endif.
+
+      continue.
+    elseif lv_comp = '' and lv_nocomp = 'X' and lv_venc is initial.
+      <fs_salida>-observacion = 'NOTIF: Factura no vencida.'.
+      continue.
+    else.
+** Procesamiento de factura encontrada vencida: factura no compensada (anulación de factura).
+      if lv_nocomp = 'X' and lv_comp = ''.  "Si la factura no se encuentra compensada.
+        refresh: ti_return,
+                 ti_success.
+
+        call function 'BAPI_BILLINGDOC_CANCEL1'
+          exporting
+            billingdocument = <fs_salida>-vbeln
+            testrun         = pa_test
+            no_commit       = 'X'
+          tables
+            return          = ti_return
+            success         = ti_success.
+
+        if ti_success[] is initial.
+          <fs_salida>-observacion = 'ERROR: BAPI cancelación factura.'.
+          continue.
+        else.
+          commit work and wait.
+          <fs_salida>-doc_factura_an = 'X'.
+        endif.
+      endif.
+
+** Se bloquea el pedido
+      clear: st_header_in,
+             st_header_inx.
+
+      refresh: ti_return2.
+
+      st_header_inx-updateflag = 'U'.
+      st_header_inx-bill_block = 'X'.
+      st_header_in-bill_block  = '10'. "Motivo de bloqueo 10, no facturar.
+
+      if pa_test is initial.
+
+        call function 'BAPI_SALESORDER_CHANGE'
+          exporting
+            salesdocument    = <fs_salida>-doc_sd
+            order_header_in  = st_header_in
+            order_header_inx = st_header_inx
+          tables
+            return           = ti_return2.
+
+        read table ti_return2 with key type = 'E'.
+
+        if sy-subrc = 0.
+          <fs_salida>-observacion = 'ERROR: BAPI bloqueo pedido.'.
+          continue.
+        else.
+          <fs_salida>-doc_sd_an = 'X'.
+          commit work and wait.
+        endif.
+      else.
+        <fs_salida>-doc_sd_an = 'X'.
+      endif.
+
+** Si se recupera estado anterior, se actualiza registro y se lleva a log.
+      if pa_test is initial.
+** Anulamos el documento con el número de consecutivo existente.
+        select single estado
+        into lv_estado_ant
+        from ztica_ftokri
+        where consecutivo = <fs_salida>-consecutivo.
+
+        if sy-subrc = 0.
+          update ztica_ftokri
+          set estado = 'A'
+          where consecutivo = <fs_salida>-consecutivo.
+
+          perform f_guardar_log
+                  using <fs_salida>-consecutivo "consecutivo formato
+                        '1'                     "consecutivo registro (1 por defecto).
+                        lv_estado_ant           "estado anterior
+                        'A'                     "estado actual
+                        'Declaración no pagada en la fecha límite'.
+        else.
+          <fs_salida>-observacion = 'ERROR: Formato a borrar no encontrado.'.
+          continue.
+        endif.
+      endif.
+
+** Marca para formato de declaración anulado.
+      <fs_salida>-doc_formato_an = 'X'.
+** Documento completo procesado.
+      <fs_salida>-observacion = 'NOTIF: Documento procesado.'.
+    endif.
+  endloop.
+
+endform.                    " F_CONSULTAR_INFORMACION
+*&---------------------------------------------------------------------*
+*&      Form  F_GUARDAR_LOG
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_CONSFORM  text
+*      -->P_CON_REG  text
+*      -->P_ESTADO_ANT  text
+*      -->P_ESTADO_ACT  text
+*      -->P_MOTIVO  text
+*----------------------------------------------------------------------*
+form f_guardar_log  using    p_consform
+                             p_con_reg
+                             p_estado_ant
+                             p_estado_act
+                             p_motivo.
+
+  data:   vl_observacion type ztica_log_mod-observaciones,
+          vl_consecutivo type  zconsecutivo,
+          vl_nuevo_valor like ztica_log_mod-nuevo_valor,
+          vl_valor_anterior like ztica_log_mod-valor_anterior.
+
+  data: ti_ztica_log_mod type table of ztica_log_mod.
+  data: wa_ztica_log_mod like line of ti_ztica_log_mod.
+
+*Solo se guarda el cambio de estado, el usuario, fecha y hora quedaria en la tabla del log
+  wa_ztica_log_mod-usuario = sy-uname.
+  wa_ztica_log_mod-fecha   = sy-datum.
+  wa_ztica_log_mod-hora    = sy-uzeit.
+
+  call function 'NUMBER_GET_NEXT'
+    exporting
+      nr_range_nr             = '01'
+      object                  = 'Z_LOG_MOD'
+    importing
+      number                  = vl_consecutivo
+    exceptions
+      interval_not_found      = 1
+      number_range_not_intern = 2
+      object_not_found        = 3
+      quantity_is_0           = 4
+      quantity_is_not_1       = 5
+      interval_overflow       = 6
+      buffer_overflow         = 7
+      others                  = 8.
+
+  wa_ztica_log_mod-num_consecutivo = vl_consecutivo.
+  wa_ztica_log_mod-consecutivo_reg = p_con_reg.
+
+  wa_ztica_log_mod-num_ticket = 0.
+  wa_ztica_log_mod-tabla = 'ZTICA_FTOKRI'.
+  wa_ztica_log_mod-transaccion = 'ZICA589'.
+  wa_ztica_log_mod-operacion = 'U'.
+  concatenate 'Cambio estado de Decla ReteICA - ' p_consform '-' p_motivo into vl_observacion.
+  wa_ztica_log_mod-observaciones = vl_observacion.
+  wa_ztica_log_mod-programa = 'ZICAD_RP_ANULACIONES_RETEICA'.
+  wa_ztica_log_mod-campo = 'ESTADO'.
+
+  move p_estado_act to vl_nuevo_valor.
+  wa_ztica_log_mod-nuevo_valor = vl_nuevo_valor.
+
+  move p_estado_ant to vl_valor_anterior.
+  wa_ztica_log_mod-valor_anterior = vl_valor_anterior.
+
+  insert ztica_log_mod from wa_ztica_log_mod.
+  commit work and wait.
+
+endform.                    " F_GUARDAR_LOG
+*&---------------------------------------------------------------------*
+*&      Form  F_IMPRIMIR_INFORMACION
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form f_imprimir_informacion.
+
+  constants: lc_medidas type i value 220.
+
+** Cabecera de datos.
+*Solo se guarda el cambio de estado, el usuario, fecha y hora quedaria en la tabla del log
+  write : 'Usuario   : ', sy-uname. new-line.
+  write : 'Fecha     : ', sy-datum. new-line.
+  write : 'Hora      : ', sy-uzeit. new-line.
+
+** Tipo de ejecución.
+  if pa_test is not initial.
+    write : 'Ejecución :', ' TEST'. new-line.
+  else.
+    write : 'Ejecución :', ' REAL'. new-line.
+  endif.
+
+** Impresión de cabeceras de reporte.
+  write: sy-uline(lc_medidas).
+  new-line.
+  write: sy-vline,
+         'Año   ' color col_heading, sy-vline,
+         'Bimestre' color col_heading, sy-vline,
+         'CC/NIT        ' color col_heading, sy-vline,
+         'Consecutivo ' color col_heading, sy-vline,
+         'Fecha     ' color col_heading, sy-vline,
+         'Estado' color col_heading,  sy-vline,
+         'Documento SD' color col_heading, sy-vline,
+         'Número partner' color col_heading, sy-vline,
+         'Número factura' color col_heading, sy-vline,
+         'Anula Factura' color col_heading, sy-vline,
+         'Anula Pedido ' color col_heading, sy-vline,
+         'Anula Formato' color col_heading, sy-vline,
+         'Observación                                  ' color col_heading, sy-vline.
+
+  write: sy-uline(lc_medidas).
+  new-line.
+
+  loop at ti_salida assigning <fs_salida>.
+
+** Factura anulada.
+    if <fs_salida>-doc_factura_an = 'X'.
+      <fs_salida>-doc_factura_an = 'S'.
+    else.
+      <fs_salida>-doc_factura_an = 'N'.
+    endif.
+
+** Pedido anulado.
+    if <fs_salida>-doc_sd_an = 'X'.
+      <fs_salida>-doc_sd_an = 'S'.
+    else.
+      <fs_salida>-doc_sd_an = 'N'.
+    endif.
+
+** Formato anulado.
+    if <fs_salida>-doc_formato_an = 'X'.
+      <fs_salida>-doc_formato_an = 'S'.
+    else.
+      <fs_salida>-doc_formato_an = 'N'.
+    endif.
+
+** Impresión de registros de anulación.
+    write:
+      sy-vline,
+      (6) <fs_salida>-gjahr       , sy-vline           , "Año
+      (8) <fs_salida>-bimestre    , sy-vline        , "Bimestre
+      (14)<fs_salida>-nr_docto    , sy-vline        , "Número de documento (cédula/nit)
+      (12)<fs_salida>-consecutivo , sy-vline     , "Número de consecutivo
+      (10)<fs_salida>-fecha       , sy-vline           , "Fecha
+      (6) <fs_salida>-estado      , sy-vline    , "Estado
+      (12)<fs_salida>-doc_sd      , sy-vline    , "Documento SD
+      (14)<fs_salida>-gpart       , sy-vline    , "Número de partner
+      (14)<fs_salida>-vbeln       , sy-vline    , "Número de factura
+      (13) <fs_salida>-doc_factura_an  , sy-vline , "Indicador Factura Anulada
+      (13) <fs_salida>-doc_sd_an       , sy-vline, "Indicador Formato Anulado
+      (13) <fs_salida>-doc_formato_an  , sy-vline, "Indicador Formato Anulado
+      (45)<fs_salida>-observacion     , sy-vline. "Observación.
+
+    write: sy-uline(lc_medidas).
+    new-line.
+  endloop.
+
+endform.                    " F_IMPRIMIR_INFORMACION
