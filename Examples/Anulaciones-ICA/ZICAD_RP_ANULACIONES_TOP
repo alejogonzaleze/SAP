@@ -1,0 +1,83 @@
+*===========================================================================================*
+* INCLUDE ZICAD_RP_ANULACIONES_TOP                                                      *
+*===========================================================================================*
+* DESCRIPCION: Se requiere crear programa y transacción que permita la anulación de las     *
+*              declaraciones ReteICA no pagadas en el plazo definido.                       *
+*===========================================================================================*
+* ANALISTA:    Diego Hernán Gómez Jaramillo.                                                *
+* PROGRAMADOR: Alejandro González Estrada.                                                  *
+*===========================================================================================*
+
+*--------------------------------------------------------------------------------------------
+* LOG DE MODIFICACION
+*--------------------------------------------------------------------------------------------
+* FECHA           14/10/2015
+* PROGRAMADOR     Alejandro González Estrada
+* CORRECCION      DEVK9A1FCI
+* DESCRIPCION     Versión inicial del programa.
+* ARANDA          3471
+*--------------------------------------------------------------------------------------------
+
+*********************************************************************************************
+** NOTA AUTHORITY-CHECK                                                                    **
+*********************************************************************************************
+** No es necesario AUTHORITY-CHECK debido a que las autorizaciones                         **
+** del programa se controlan a través de la transacción asociada.                          **
+*********************************************************************************************
+
+** Variables globales
+  data: vg_gpart type bapibus1006_head-bpartner,
+        vg_bsort type bu_sort2,
+        vg_count type sy-dbcnt,
+        vg_xblnr type dfkkop-xblnr,
+        vg_valid type c.
+
+** Tablas para utilizar.
+  tables:ztica_ftokri.
+
+** Declaración de estructuras
+  data: begin of st_salida,
+    gjahr           type ztica_ftokri-gjahr,       "Año
+    bimestre        type ztica_ftokri-bimestre,    "Bimestre
+    nr_docto        type ztica_ftokri-nr_docto,    "Número de documento
+    consecutivo     type ztica_ftokri-consecutivo, "Número de consecutivo
+    fecha           type ztica_ftokri-fecha,       "Fecha
+    estado          type ztica_ftokri-estado,      "Estado
+    doc_sd          type ztica_ftokri-doc_sd,      "Documento SD
+    cedula          type ztica_ftokri-cedula,      "Documento cedula
+    gpart           type gpart_kk,                 "Número de partner
+    vbeln           type vbeln_vf,                 "Número de factura
+    doc_factura_an  type c,                        "Indicador Factura Anulada
+    doc_sd_an       type c,                        "Indicador Formato Anulado
+    doc_formato_an  type c,                        "Indicador Formato Anulado
+    observacion     type char50,                   "Observación.
+  end of st_salida.
+
+** Declaraciones de estructuras.
+    data: st_header_inx type bapisdh1x,
+          st_header_in  type bapisdh1.
+
+** Declaración de tablas.
+  data: ti_salida   like st_salida          occurs 0,
+        ti_fkkop    like fkkop              occurs 0,
+        ti_return   like  bapireturn1       occurs 0 with header line,
+        ti_return2  like  bapiret2          occurs 0 with header line,
+        ti_success  like  bapivbrksuccess   occurs 0 with header line.
+
+** Declaración de field-symbols.
+  field-symbols: <fs_salida> like st_salida,
+                 <fs_fkkop>  like fkkop.
+
+** Selección de parámetros para reporte.
+  selection-screen begin of block blk01 with frame title text-001.
+  select-options: so_fech for ztica_ftokri-fecha_nc.
+  parameters:     pa_year type ztica_ftokri-gjahr,
+                  pa_bime type ztica_ftokri-bimestre,
+                  pa_nrdo type ztica_ftokri-nr_docto.
+
+  selection-screen end of block blk01.
+
+** Selección de modo de ejecución.
+  selection-screen begin of block blk02 with frame title text-002.
+  parameters: pa_test as checkbox default 'X'.
+  selection-screen end of block blk02.
