@@ -1,0 +1,14 @@
+  data text type smyo_text.
+  data: lv_mensaje(50) type c.
+
+  data ls_object type borident.
+  check gs_lporb-catid = 'BO'.
+  ls_object-objtype = gs_lporb-typeid.
+  ls_object-objkey  = gs_lporb-instid.
+
+** Parámetros globales para visualización.
+  set parameter id 'TYP' field ls_object-objtype.
+  set parameter id 'KEY' field ls_object-objkey.
+
+** Lllamado a transacción asociada para consulta de imágenes.
+  call transaction 'ZPRCIU_RADICADOS'.
