@@ -1,0 +1,28 @@
+*&---------------------------------------------------------------------*
+*&  Include           ZCS_NOTIFICACIONES_WFCD_TOP
+*&---------------------------------------------------------------------*
+*======================================================================*
+*                                ESTRUCTURAS                           *
+*======================================================================*
+* Estructura para datos de los avisos
+TYPES: BEGIN OF st_qmel,
+  qmnum like qmel-qmnum,  " Número del aviso
+  objnr LIKE qmel-objnr,  " Número de objeto para gestión de status
+  stat  LIKE jest-stat,   " Status individual de un objeto
+END OF st_qmel.
+*======================================================================*
+*                               TABLAS INTERNAS                        *
+*======================================================================*
+DATA: ti_qmel   TYPE STANDARD TABLE OF st_qmel,
+*======================================================================*
+*                               AREAS DE TRABAJO                       *
+*======================================================================*
+      wa_qmel   LIKE LINE OF ti_qmel,
+*======================================================================*
+*                                  VARIABLES                           *
+*======================================================================*
+      vg_fecha   LIKE sy-datum,          " Fecha de la consulta
+      vg_object  TYPE swc_object,        " Tipo de objeto
+      vg_eventid LIKE swedumevid-evtid,  " Id. Evento
+      vg_objkey  LIKE sweinstcou-objkey, " Clave del objeto
+      vg_texto(100) TYPE c.              " Texto de confirmación
