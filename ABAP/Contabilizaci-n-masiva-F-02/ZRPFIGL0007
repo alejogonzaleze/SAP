@@ -1,0 +1,38 @@
+*-------------------------------------------------------------------------------------------
+* REPORT  ZRPFIGL0007
+*-------------------------------------------------------------------------------------------
+* TITULO DEL PROGRAMA:
+* CONTABILIZACIÓN MASIVA F-02
+* DESCRIPCION:
+* Proceso de contabilización masivo transacción F-02.
+* CONSULTOR ABAP/WORKFLOW: ALEJANDRO GONZALEZ ESTRADA.
+*-------------------------------------------------------------------------------------------
+* LOG DE MODIFICACION:
+*-------------------------------------------------------------------------------------------
+* FECHA 05/02/2015
+* PROGRAMADOR ALEJANDRO GONZALEZ ESTRADA.
+* CORRECCION:   DEVK9A1B7C
+* ARANDA:       391933
+* DESCRIPCION:  MODIFICACIÓN INICIAL.
+*-------------------------------------------------------------------------------------------
+
+*-------------------------------------------------------------------------------------------
+* Este programa no icluye AUTHORITY-CHECK ya que no fue solicitado por el Area y su uso es
+* controlado por la asignación de su transacción a través de sus roles.
+*-------------------------------------------------------------------------------------------
+
+** INICIO DE REPORTE.
+REPORT  ZRPFIGL0007.
+
+** CABECERA DE PROGRAMA Y VARIABLES DE CONTROL
+INCLUDE ZRPFIGL007_TOP.
+** INICIO DE SELECCIÓN
+START-OF-SELECTION.
+** INICIO DE PROCESAMIENTO DE ARCHIVO.
+  PERFORM SELECCION_DATOS.
+** CREACIÓN DE DOCUMENTOS CONTABLES.
+  PERFORM CREACION_DOCUMENTOS.
+
+END-OF-SELECTION.
+** FUNCIONES CORRESPONDIENTES DE PROGRAMA.
+INCLUDE ZRPFIGL0007_F01.
