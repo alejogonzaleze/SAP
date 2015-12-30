@@ -1,0 +1,334 @@
+*----------------------------------------------------------------------*
+***INCLUDE ZRPFIGL0007_F01 .
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&      Form  SELECCIONAR_RUTA
+*&---------------------------------------------------------------------*
+*       Función para selección de archivo
+*----------------------------------------------------------------------*
+
+FORM SELECCIONAR_RUTA .
+
+  DATA: TI_TAB TYPE FILETABLE,
+        WA_TAB TYPE LINE OF FILETABLE,
+        GD_SUBRC TYPE I.
+
+  CALL METHOD CL_GUI_FRONTEND_SERVICES=>FILE_OPEN_DIALOG
+    EXPORTING
+      WINDOW_TITLE     = 'Seleccionar archivo'
+      DEFAULT_FILENAME = '*.xlsx'
+      MULTISELECTION   = ''
+    CHANGING
+      FILE_TABLE       = TI_TAB
+      RC               = GD_SUBRC.
+
+  READ TABLE TI_TAB INDEX 1 INTO WA_TAB.
+  P_FILE = WA_TAB.
+
+ENDFORM.                    " SELECCIONAR_RUTA
+*&---------------------------------------------------------------------*
+*&      Form  SELECCION_DATOS
+*&---------------------------------------------------------------------*
+*       Selección de datos de la ruta correspondiente.
+*----------------------------------------------------------------------*
+
+FORM SELECCION_DATOS .
+
+  TYPES T_TEXT_DATA(4096) TYPE C OCCURS 0.
+
+** Asignamos el nombre del archivo correspondiente
+  DATA: LV_ARCHIVO  TYPE RLGRAP-FILENAME,
+        TI_RAW      TYPE T_TEXT_DATA,
+        LV_VISIBLE  TYPE C.
+
+** Asignamos variables correspondientes.
+  LV_ARCHIVO = P_FILE.
+
+  CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+    EXPORTING
+      PERCENTAGE = 20
+      TEXT       = 'Cargando Registros'.
+
+** Carga con actualización simple.
+  CALL FUNCTION 'TEXT_CONVERT_XLS_TO_SAP'
+    EXPORTING
+      I_FIELD_SEPERATOR    = 'X'
+      I_LINE_HEADER        = 'X'
+      I_TAB_RAW_DATA       = TI_RAW
+      I_FILENAME           = LV_ARCHIVO
+    TABLES
+      I_TAB_CONVERTED_DATA = TI_ESTRUCTURA[]
+    EXCEPTIONS
+      CONVERSION_FAILED    = 1
+      OTHERS               = 2.
+
+  IF SY-SUBRC <> 0.
+    "MESSAGE E001.
+  ENDIF.
+
+ENDFORM.                    " SELECCION_DATOS
+*&---------------------------------------------------------------------*
+*&      Form  CREACION_DOCUMENTOS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM CREACION_DOCUMENTOS .
+
+  DATA: LV_CONSECUTIVO    TYPE  CHAR10,
+        LV_TABIX          TYPE  SY-TABIX,
+        LV_TFILL          TYPE  SY-TFILL,
+        LV_DOC            TYPE  CHAR10,
+        LV_MENSAJE        TYPE  CHAR30,
+        LV_ITEMNOACC      TYPE  POSNR_ACC,
+
+        WA_DOCUMENTHEADER LIKE  BAPIACHE09,
+        WA_FMIOI          LIKE  FMIOI,
+        WA_ACCOUNTGL      LIKE  BAPIACGL09,
+        WA_ACCOUNTGL01    LIKE  BAPIACGL09,
+        WA_CURRENCYAMOUNT LIKE  BAPIACCR09,
+        WA_CURRENCYAMOU01 LIKE  BAPIACCR09,
+
+        TI_ACCOUNTGL      LIKE  BAPIACGL09 OCCURS 0 WITH HEADER LINE,
+        TI_ACCOUNTPAYABLE LIKE  BAPIACAP09 OCCURS 0 WITH HEADER LINE,
+        TI_CURRENCYAMOUNT LIKE  BAPIACCR09 OCCURS 0 WITH HEADER LINE,
+        TI_RETURN         LIKE  BAPIRET2 OCCURS 0 WITH HEADER LINE,
+        TI_RETURNTOT      LIKE  BAPIRET2 OCCURS 0 WITH HEADER LINE.
+
+** Variables globales
+  DATA: LV_AMT_DOCCUR    TYPE BAPIWRBTR,
+        LV_AMT_DOCCURTOT TYPE BAPIWRBTR,
+        LV_AMT_DOCCURINI TYPE BAPIWRBTR.
+
+** Cargamos datos de cabecera de los documentos para creación.
+  WA_DOCUMENTHEADER-USERNAME    = SY-UNAME.       "Usuario creador documento.
+  WA_DOCUMENTHEADER-HEADER_TXT  = 'ZRPFIGL0007'.  "Referencia a programa.
+  WA_DOCUMENTHEADER-COMP_CODE   = P_BUKRS.        "Sociedad
+  WA_DOCUMENTHEADER-DOC_DATE    = P_BLDAT.        "Fecha de documento
+  WA_DOCUMENTHEADER-PSTNG_DATE  = P_BUDAT.        "Fecha de contabilización
+  WA_DOCUMENTHEADER-FISC_YEAR   = P_BUDAT(4).     "Año Fiscal
+  WA_DOCUMENTHEADER-FIS_PERIOD  = P_BUDAT+4(2).   "Periodo
+  WA_DOCUMENTHEADER-DOC_TYPE    = P_BLART.        "Clase de documento
+  WA_DOCUMENTHEADER-REF_DOC_NO  = P_XBLNR.        "Referencia de documento
+
+** Inicialización de variables control rompimiento.
+  DESCRIBE TABLE TI_ESTRUCTURA LINES LV_TFILL.
+  LV_CONSECUTIVO = 0.
+  LV_TABIX       = 0.
+
+** Cargamos datos para documento.
+  LOOP AT TI_ESTRUCTURA.
+
+** Posición de documento contable.
+    LV_CONSECUTIVO = LV_CONSECUTIVO + 1.
+    LV_TABIX       = LV_TABIX + 1.
+
+** Registros para la primera posición cuando se trata de varias páginas de documentos.
+    IF LV_CONSECUTIVO = 1 AND LV_TABIX <> 1.
+      APPEND WA_ACCOUNTGL01    TO TI_ACCOUNTGL.
+      APPEND WA_CURRENCYAMOU01 TO TI_CURRENCYAMOUNT.
+      LV_CONSECUTIVO = LV_CONSECUTIVO + 1.
+    ENDIF.
+
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING
+        INPUT  = LV_CONSECUTIVO
+      IMPORTING
+        OUTPUT = LV_ITEMNOACC.
+
+** Cuentas de mayor / datos de cuenta.
+    IF TI_ESTRUCTURA-CLAVE = '40' OR TI_ESTRUCTURA-CLAVE = '50'.
+
+      WA_ACCOUNTGL-ITEMNO_ACC  = LV_ITEMNOACC.
+      WA_ACCOUNTGL-DOC_TYPE    = WA_DOCUMENTHEADER-DOC_TYPE.
+      WA_ACCOUNTGL-COMP_CODE   = WA_DOCUMENTHEADER-COMP_CODE.
+      WA_ACCOUNTGL-GL_ACCOUNT  = TI_ESTRUCTURA-VENDOR_NO.
+      WA_ACCOUNTGL-ITEM_TEXT   = TI_ESTRUCTURA-ITEM_TEXT.
+      WA_ACCOUNTGL-COND_TYPE   = TI_ESTRUCTURA-COND_TYPE.
+      WA_ACCOUNTGL-DIVISION    = TI_ESTRUCTURA-DIVISION.
+      WA_ACCOUNTGL-RES_DOC     = TI_ESTRUCTURA-RES_DOC.
+      WA_ACCOUNTGL-RES_ITEM    = TI_ESTRUCTURA-RES_ITEM.
+      WA_ACCOUNTGL-COSTCENTER  = TI_ESTRUCTURA-COSTCENTER.
+      WA_ACCOUNTGL-FUND        = TI_ESTRUCTURA-FUND.
+      WA_ACCOUNTGL-FUNDS_CTR   = TI_ESTRUCTURA-FUNDS_CTR.
+      WA_ACCOUNTGL-CMMT_ITEM   = TI_ESTRUCTURA-CMMT_ITEM.
+      WA_ACCOUNTGL-FUNC_AREA   = TI_ESTRUCTURA-FUNC_AREA.
+      WA_ACCOUNTGL-WBS_ELEMENT = TI_ESTRUCTURA-WBS_ELEMENT.
+
+** Conversión de centro de coste.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING
+          INPUT  = WA_ACCOUNTGL-COSTCENTER
+        IMPORTING
+          OUTPUT = WA_ACCOUNTGL-COSTCENTER.
+
+** Conversión de documento.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING
+          INPUT  = WA_ACCOUNTGL-RES_DOC
+        IMPORTING
+          OUTPUT = WA_ACCOUNTGL-RES_DOC.
+
+** Conversión de posición.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING
+          INPUT  = WA_ACCOUNTGL-RES_ITEM
+        IMPORTING
+          OUTPUT = WA_ACCOUNTGL-RES_ITEM.
+
+** Buscamos información de documentos con documento asociado contablemente.
+      SELECT SINGLE BUS_AREA FISTL FONDS FAREA FAREA FIPEX
+      INTO (WA_ACCOUNTGL-BUS_AREA,
+            WA_ACCOUNTGL-FUNDS_CTR,
+            WA_ACCOUNTGL-FUND,
+            WA_ACCOUNTGL-FUNC_AREA,
+            WA_ACCOUNTGL-FUNC_AREA_LONG,
+            WA_ACCOUNTGL-CMMT_ITEM_LONG)
+      FROM FMIOI
+      WHERE REFBN = WA_ACCOUNTGL-RES_DOC
+      AND   RFPOS = WA_ACCOUNTGL-RES_ITEM.
+
+** Ingresamos registros.
+      APPEND WA_ACCOUNTGL TO TI_ACCOUNTGL.
+
+** Si es la primera posición, guardamos los registros para la contabilización masiva.
+      IF LV_TABIX = 1.
+        WA_ACCOUNTGL01 = WA_ACCOUNTGL.
+      ENDIF.
+
+    ENDIF.
+
+    IF TI_ESTRUCTURA-CLAVE = '31'.
+
+      TI_ACCOUNTPAYABLE-ITEMNO_ACC   = LV_ITEMNOACC.
+      TI_ACCOUNTPAYABLE-VENDOR_NO    = TI_ESTRUCTURA-VENDOR_NO.
+      TI_ACCOUNTPAYABLE-SP_GL_IND    = TI_ESTRUCTURA-SP_GL_IND.
+      TI_ACCOUNTPAYABLE-ITEM_TEXT    = TI_ESTRUCTURA-ITEM_TEXT.
+      TI_ACCOUNTPAYABLE-FUND         = TI_ESTRUCTURA-FUND.
+
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING
+          INPUT  = TI_ACCOUNTPAYABLE-VENDOR_NO
+        IMPORTING
+          OUTPUT = TI_ACCOUNTPAYABLE-VENDOR_NO.
+
+      APPEND TI_ACCOUNTPAYABLE.
+    ENDIF.
+
+** Posiciiones de moneda.
+    WA_CURRENCYAMOUNT-ITEMNO_ACC = LV_ITEMNOACC.
+    WA_CURRENCYAMOUNT-CURRENCY   = P_WAERS.
+    WA_CURRENCYAMOUNT-AMT_DOCCUR = TI_ESTRUCTURA-AMT_DOCCUR.
+
+** Validación de negativos.
+    IF  TI_ESTRUCTURA-CLAVE = '31' OR TI_ESTRUCTURA-CLAVE = '50'.
+      WA_CURRENCYAMOUNT-AMT_DOCCUR = WA_CURRENCYAMOUNT-AMT_DOCCUR * -1.
+    ENDIF.
+
+    APPEND WA_CURRENCYAMOUNT TO TI_CURRENCYAMOUNT.
+
+** Si es la primera posición, guardamos los registros para la contabilización masiva.
+    IF LV_TABIX = 1.
+      WA_CURRENCYAMOU01 = WA_CURRENCYAMOUNT.
+      LV_AMT_DOCCURINI  = WA_CURRENCYAMOU01-AMT_DOCCUR.
+    ELSE.
+      LV_AMT_DOCCUR     = LV_AMT_DOCCUR    +  WA_CURRENCYAMOUNT-AMT_DOCCUR.
+      LV_AMT_DOCCURTOT  = LV_AMT_DOCCURTOT +  WA_CURRENCYAMOUNT-AMT_DOCCUR.
+    ENDIF.
+
+** Si se llega a 999 posiciones o si se llega al final del documento.
+    IF LV_CONSECUTIVO = 999 OR LV_TABIX = LV_TFILL.
+      LV_DOC = LV_DOC + 1.
+
+** Modificación de primera línea de moneda con valor hasta el punto que se lleva.
+      READ TABLE TI_CURRENCYAMOUNT INDEX 1.
+      TI_CURRENCYAMOUNT-AMT_DOCCUR = LV_AMT_DOCCUR * -1.
+      MODIFY TI_CURRENCYAMOUNT INDEX 1.
+      LV_AMT_DOCCUR  = 0.
+      LV_CONSECUTIVO = 0.
+
+** Creación de documento contable.
+      CLEAR LV_MENSAJE.
+      CONCATENATE 'Creando documento' LV_DOC INTO LV_MENSAJE SEPARATED BY SPACE.
+
+      CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+        EXPORTING
+          PERCENTAGE = 50
+          TEXT       = LV_MENSAJE.
+
+** Implementación de BAPI para documentos.
+      CALL FUNCTION 'BAPI_ACC_DOCUMENT_POST'
+        EXPORTING
+          DOCUMENTHEADER = WA_DOCUMENTHEADER
+        TABLES
+          ACCOUNTGL      = TI_ACCOUNTGL
+          ACCOUNTPAYABLE = TI_ACCOUNTPAYABLE
+          CURRENCYAMOUNT = TI_CURRENCYAMOUNT
+          RETURN         = TI_RETURN.
+
+** Mensajes consecutivos para creación de documentos.
+      LOOP AT TI_RETURN INTO TI_RETURNTOT.
+        APPEND TI_RETURNTOT.
+      ENDLOOP.
+
+** Limpiamos variables de control.
+      CLEAR:   TI_ACCOUNTGL,
+               TI_ACCOUNTPAYABLE,
+               TI_CURRENCYAMOUNT,
+               TI_RETURN.
+
+      REFRESH: TI_ACCOUNTGL,
+               TI_ACCOUNTPAYABLE,
+               TI_CURRENCYAMOUNT,
+               TI_RETURN.
+
+    ENDIF.
+  ENDLOOP.
+
+  READ TABLE TI_RETURNTOT WITH KEY TYPE = 'E'.
+
+** Confirmación de ejecución de BAPI.
+  IF SY-SUBRC <> 0 AND P_REAL IS NOT INITIAL.
+
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+     EXPORTING
+       WAIT          = 'X'
+*     IMPORTING
+*       RETURN        =
+              .
+
+   WRITE: /: 'Se han generado los siguientes documentos:'.
+   WRITE: /.
+
+** Mostramos solo mensajes de los documentos creados.
+    LOOP AT TI_RETURNTOT WHERE TYPE = 'S' AND ID = 'RW' AND NUMBER = '605'.
+      WRITE /: TI_RETURNTOT-MESSAGE .
+    ENDLOOP.
+
+    WRITE: /.
+    WRITE: /: 'Documentos creados correctamente.'.
+
+  ELSE.
+
+   READ TABLE TI_RETURNTOT WITH KEY TYPE = 'E'.
+
+   IF SY-SUBRC = 0.
+     WRITE: /: 'Se han encontrado los siguientes errores:'.
+     WRITE: /.
+
+*  * Mostramos solo los documentos con errores.
+      LOOP AT TI_RETURNTOT WHERE TYPE = 'E'.
+        WRITE /: TI_RETURNTOT-MESSAGE .
+      ENDLOOP.
+   ELSE.
+     WRITE: /: 'No se encontraron errores.'.
+   ENDIF.
+
+   WRITE: /.
+   WRITE: /: 'No se han creado documentos contables.'.
+
+  ENDIF.
+
+ENDFORM.                    " CREACION_DOCUMENTOS
