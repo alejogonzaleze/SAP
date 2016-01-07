@@ -1,0 +1,1185 @@
+*&---------------------------------------------------------------------*
+*&      Form  F_START_OF_SELECTION
+*&---------------------------------------------------------------------*
+*       Subrutina asociada al evento START_OF_SELECTION
+*----------------------------------------------------------------------*
+FORM f_start_of_selection.
+
+*.Authority-Check
+  PERFORM f_authority_check.
+
+*.Obtenemos Nits
+  PERFORM f_get_data.
+
+*.Procesamos los registros encontrados
+  PERFORM f_process_data.
+
+ENDFORM.                    " F_START_OF_SELECTION
+
+*&---------------------------------------------------------------------*
+*&      Form  F_END_OF_SELECTION
+*&---------------------------------------------------------------------*
+*       Subrutina asociada al evento END_OF_SELECTION
+*----------------------------------------------------------------------*
+FORM f_end_of_selection.
+
+*.Mostramos ALV
+  PERFORM f_display_alv.
+
+ENDFORM.                    " F_END_OF_SELECTION
+
+*&---------------------------------------------------------------------*
+*&      Form  F_AUTHORITY_CHECK
+*&---------------------------------------------------------------------*
+*       Verificamos si posee permisos para Ejecutar el Programa
+*----------------------------------------------------------------------*
+FORM f_authority_check.
+
+*.Validar Objetos de Autorización.
+  AUTHORITY-CHECK OBJECT 'ZRM_CF'
+                      ID 'ACTVT' FIELD '16'.
+
+  IF sy-subrc NE 0.
+
+*...No posee Autorización para Ejecutar el Programa
+    MESSAGE e002.
+  ENDIF.
+
+ENDFORM.                    " F_AUTHORITY_CHECK
+
+*&---------------------------------------------------------------------*
+*&      Form  F_GET_DATA
+*&---------------------------------------------------------------------*
+*       Obtenemos Nits catalogados como entes descentralizados.
+*----------------------------------------------------------------------*
+FORM f_get_data.
+
+*.Declaración de Tablas Internas locales
+  DATA:
+    ti_l_nits   TYPE ztt_ra_bu_sort2.
+
+*.Instanciamos clase Cuotas de Fiscalización
+  CREATE OBJECT go_cf
+    EXPORTING
+      i_gjahr = so_gjahr-low.
+
+*.Casting para Rango de Nits
+  ti_l_nits[] = so_nits[].
+
+*.Obtenemos datos Generales para los Nits
+  ti_g_data = go_cf->get_data( i_ra_nits = ti_l_nits ).
+
+*.Comprobamos datos
+  IF ti_g_data IS INITIAL.
+
+*...No se encontraron entes descentralizados.
+    MESSAGE e001.
+  ENDIF.
+
+*.Obtenemos Radicados para los Nits
+  ti_g_rad = go_cf->get_rad( ).
+
+ENDFORM.                    " F_GET_DATA
+
+*&---------------------------------------------------------------------*
+*&      Form  F_PROCESS_DATA
+*&---------------------------------------------------------------------*
+*       Procesa los datos encontrados para desplegarlos por ALV
+*----------------------------------------------------------------------*
+FORM f_process_data.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_data     TYPE zst_cf_data,
+    st_l_rad      TYPE ztpscd_rad_cf,
+    st_l_solinfo  TYPE zst_solinfo_cf.
+
+*.Recorremos Entes Descentralizados
+  LOOP AT ti_g_data INTO st_l_data.
+
+    MOVE:
+*.....Ejercicio
+      so_gjahr-low      TO st_l_solinfo-gjahr,
+*.....BP
+      st_l_data-partner TO st_l_solinfo-partner,
+*.....Nit
+      st_l_data-nit     TO st_l_solinfo-nit,
+*.....Razón Social
+      st_l_data-razsoc  TO st_l_solinfo-razsoc,
+*.....Ciudad
+      st_l_data-city    TO st_l_solinfo-city,
+*.....Dirección
+      st_l_data-street  TO st_l_solinfo-street,
+*.....E-mail
+      st_l_data-e_mail  TO st_l_solinfo-e_mail,
+*.....Status de Envío o Impresión
+      co_yellow_light   TO st_l_solinfo-ok_snd,
+*.....Icono Log
+      co_log_icon       TO st_l_solinfo-log.
+
+*...Leemos datos de Radicado
+    READ TABLE ti_g_rad INTO st_l_rad
+                        WITH KEY gjahr    = so_gjahr-low
+                                 partner  = st_l_data-partner.
+
+    IF sy-subrc EQ 0.
+
+      MOVE:
+*.......Radicado SIH Sol.Información
+        st_l_rad-sih_sol_inf TO st_l_solinfo-sih_sol_inf,
+*.......Radicado Mercurio Sol.Información
+        st_l_rad-mer_sol_inf TO st_l_solinfo-mer_sol_inf.
+    ENDIF.
+
+*...Verificamos Campos
+    PERFORM f_check_fields CHANGING st_l_solinfo.
+
+*...Anexamos a Tabla
+    APPEND st_l_solinfo TO ti_g_solinfo.
+    CLEAR st_l_solinfo.
+  ENDLOOP.
+
+ENDFORM.                    " F_PROCESS_DATA
+
+*&---------------------------------------------------------------------*
+*&      Form  F_DISPLAY_ALV
+*&---------------------------------------------------------------------*
+*       Mostramos ALV
+*----------------------------------------------------------------------*
+FORM f_display_alv.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_key  TYPE salv_s_layout_key.
+
+*.Declaración de Constantes locales
+  CONSTANTS:
+    vl_true TYPE sap_bool VALUE 'X'.
+
+*.Verificamos que la tabla interna no esté vacía
+  CHECK ti_g_solinfo[] IS NOT INITIAL.
+
+*.Crear tabla de ALV; crear instancia
+  TRY.
+      cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = go_table
+        CHANGING
+          t_table      = ti_g_solinfo ).
+    CATCH cx_salv_msg.                                  "#EC NO_HANDLER
+  ENDTRY.
+
+*.Manejo layout
+  go_layout = go_table->get_layout( ).
+  go_layout->set_save_restriction( cl_salv_layout=>restrict_none ).
+  st_l_key-report = sy-repid.
+  go_layout->set_key( st_l_key ).
+
+  go_functions = go_table->get_functions( ).
+  go_functions->set_all( abap_true ).
+
+*.Optimizar columnas
+  go_columns = go_table->get_columns( ).
+  go_columns->set_optimize( vl_true ).
+
+*.Seteo de textos y propiedades de columnas
+  TRY.
+
+*.....Columna ICON
+      go_column ?= go_columns->get_column( 'ICON' ).
+      go_column->set_short_text( text-003 ).
+      go_column->set_medium_text( text-004 ).
+      go_column->set_long_text( text-004 ).
+      go_column->set_alignment( '0003' ).
+
+*.....Columna PARTNER
+      go_column ?= go_columns->get_column( 'PARTNER' ).
+      go_column->set_visible( ' ' ).
+
+*.....Columna CITY
+      go_column ?= go_columns->get_column( 'CITY' ).
+      go_column->set_visible( ' ' ).
+
+*.....Columna STREET
+      go_column ?= go_columns->get_column( 'STREET' ).
+      go_column->set_visible( ' ' ).
+
+*.....Columna NIT
+      go_column ?= go_columns->get_column( 'NIT' ).
+      go_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
+
+*.....Columna OK_SND
+      go_column ?= go_columns->get_column( 'OK_SND' ).
+      go_column->set_short_text( text-013 ).
+      go_column->set_medium_text( text-013 ).
+      go_column->set_long_text( text-013 ).
+      go_column->set_alignment( '0003' ).
+
+*.....Columna LOG
+      go_column ?= go_columns->get_column( 'LOG' ).
+      go_column->set_short_text( text-006 ).
+      go_column->set_medium_text( text-006 ).
+      go_column->set_long_text( text-006 ).
+      go_column->set_alignment( '0003' ).
+      go_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
+
+    CATCH cx_root.                                       "#EC CATCH_ALL
+      MESSAGE text-002 TYPE 'E'.
+  ENDTRY.
+
+*.Incluir PF-STATUS
+  go_table->set_screen_status(
+    pfstatus      =  'ZSALV_STANDARD'
+    report        =  sy-repid
+    set_functions =  go_table->c_functions_all ).
+
+*.Selecciones -Modo de seleccion-
+  go_sel = go_table->get_selections( ).
+  go_sel->set_selection_mode( if_salv_c_selection_mode=>row_column ).
+
+*.Registrar los eventos de cl_salv_table
+  go_events = go_table->get_event( ).
+
+*.Registrar evento USER_COMMAND
+  CREATE OBJECT event_handler.
+  SET HANDLER event_handler->on_user_command FOR go_events.
+  SET HANDLER event_handler->on_link_click   FOR go_events.
+
+*.Display ALV
+  go_table->display( ).
+
+ENDFORM.                    " F_DISPLAY_ALV
+
+*&---------------------------------------------------------------------*
+*&      Form  F_CLICK_ACTION
+*&---------------------------------------------------------------------*
+*       Subrutina para controlar Evento Click sobre las celdas.
+*----------------------------------------------------------------------*
+*      -->PV_ROW      Fila
+*      -->PV_COLUMN   Columna
+*----------------------------------------------------------------------*
+FORM f_click_action  USING pv_row     TYPE salv_de_row
+                           pv_column  TYPE salv_de_column.
+
+*.Determinamos acción sobre la Columna
+  CASE pv_column.
+    WHEN 'NIT'.
+
+*.....Llamamos transacción BP
+      PERFORM f_call_bp USING pv_row.
+    WHEN 'LOG'.
+
+*.....Desplegamos Log
+      PERFORM f_show_log USING pv_row.
+  ENDCASE.
+
+ENDFORM.                    " F_CLICK_ACTION
+
+*&---------------------------------------------------------------------*
+*&      Form  F_USER_COMMAND
+*&---------------------------------------------------------------------*
+*       Subrutina para controlar los Eventos del Status GUI
+*----------------------------------------------------------------------*
+*      -->PV_FUNCTION  Función ALV
+*----------------------------------------------------------------------*
+FORM f_user_command  USING pv_function TYPE salv_de_function.
+
+*.Declaración de Variables locales
+  DATA:
+    lo_selections  TYPE REF TO cl_salv_selections,
+    ti_l_rows      TYPE salv_t_row.
+
+*.Recuperamos datos de selección de filas
+  lo_selections = go_table->get_selections( ).
+  ti_l_rows     = lo_selections->get_selected_rows( ).
+
+*.Debe seleccionar al menos un registro
+  IF ti_l_rows[] IS INITIAL. MESSAGE i003. EXIT. ENDIF.
+
+*.Para Impresión o Envío por E-mail verificamos Status
+  IF pv_function EQ 'IMP' OR pv_function EQ 'MAIL'.
+
+*  .Verificamos Status de los Registros
+    PERFORM f_check_status CHANGING ti_l_rows.
+
+*  .Verifique el Status de los Registros a Procesar
+    IF ti_l_rows[] IS INITIAL. MESSAGE i005. EXIT. ENDIF.
+  ENDIF.
+
+*.User Command
+  CASE pv_function.
+    WHEN 'RAD'.
+
+*.....Seteo de Radicados
+      PERFORM f_set_rad USING ti_l_rows.
+    WHEN 'IMP'.
+
+*.....Imprimimos Formatos
+      PERFORM f_print   USING ti_l_rows.
+    WHEN 'MAIL'.
+
+*.....Enviamos Formatos por E-mail
+      PERFORM f_email   USING ti_l_rows.
+  ENDCASE.
+
+ENDFORM.                    " F_USER_COMMAND
+
+*&---------------------------------------------------------------------*
+*&      Form  F_CALL_BP
+*&---------------------------------------------------------------------*
+*       Realizamos llamada a la Transacción BP.
+*----------------------------------------------------------------------*
+*      -->PV_ROW  Fila
+*----------------------------------------------------------------------*
+FORM f_call_bp  USING pv_row TYPE salv_de_row.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_alv TYPE zst_solinfo_cf.
+
+*.Recuperamos registro de tabla ALV según el índice
+  READ TABLE ti_g_solinfo INDEX pv_row INTO st_l_alv.
+
+  IF sy-subrc EQ 0.
+
+*...Campo no vacío
+    CHECK st_l_alv-partner IS NOT INITIAL.
+
+*...Ejecutamos el llamado a la transacción
+    SET PARAMETER ID 'BPA' FIELD st_l_alv-partner.
+    CALL TRANSACTION 'BP' AND SKIP FIRST SCREEN.
+  ENDIF.
+
+ENDFORM.                    " F_CALL_BP
+
+*&---------------------------------------------------------------------*
+*&      Form  F_SET_RAD
+*&---------------------------------------------------------------------*
+*       Subrutina para realizar el seteo de los Radicados para
+*       los formatos de Solicitud de Información
+*----------------------------------------------------------------------*
+*      -->PTI_L_ROWS  Tablas Interna de Filas
+*----------------------------------------------------------------------*
+FORM f_set_rad  USING pti_l_rows TYPE salv_t_row.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_rows       TYPE int4.
+
+*.Declaración de Field Symbols locales
+  FIELD-SYMBOLS:
+    <fs_l_solinfo>  TYPE zst_solinfo_cf.
+
+*.Recorremos Filas Seleccionadas
+  LOOP AT pti_l_rows INTO st_l_rows.
+
+*...Leemos Registro
+    READ TABLE ti_g_solinfo ASSIGNING <fs_l_solinfo> INDEX st_l_rows.
+    IF sy-subrc EQ 0.
+
+*.....Capturamos Radicados por Pantalla
+      PERFORM f_capture_rad CHANGING <fs_l_solinfo>.
+    ENDIF.
+  ENDLOOP.
+
+*.Optimizar columnas y Refrescamos ALV
+  go_columns = go_table->get_columns( ).
+  go_columns->set_optimize( 'X' ).
+  go_table->refresh( ).
+
+ENDFORM.                    " F_SET_RAD
+
+*&---------------------------------------------------------------------*
+*&      Form  F_CAPTURE_RAD
+*&---------------------------------------------------------------------*
+*       Muestra Ventana Modal para Capturar los Radicados
+*----------------------------------------------------------------------*
+*      <--PST_L_SOLINFO  Estructura Solicitud de Información
+*----------------------------------------------------------------------*
+FORM f_capture_rad  CHANGING pst_l_solinfo TYPE zst_solinfo_cf.
+
+*.Declaración de Tablas Internas locales
+  DATA:
+    ti_l_rad TYPE STANDARD TABLE OF sval.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_sval     TYPE sval,
+    st_l_rad      TYPE sval,
+    st_l_rad_new  TYPE ztpscd_rad_cf.
+
+*.Declaración de Variables locales
+  DATA:
+    vl_answer TYPE c.
+
+*.Declaración de Constantes locales
+  CONSTANTS:
+    co_rad_cf   TYPE tabname    VALUE 'ZTPSCD_RAD_CF',
+    co_but000   TYPE tabname    VALUE 'BUT000',
+    co_sih      TYPE fieldname  VALUE 'SIH_SOL_INF',
+    co_mer      TYPE fieldname  VALUE 'MER_SOL_INF',
+    co_nit      TYPE fieldname  VALUE 'BU_SORT2'.
+
+*.Seteamos Valores para Nit
+  st_l_sval-tabname     = co_but000.
+  st_l_sval-fieldname   = co_nit.
+  st_l_sval-value       = pst_l_solinfo-nit.
+  st_l_sval-field_attr  = '02'.
+  APPEND st_l_sval TO ti_l_rad.
+  CLEAR st_l_sval.
+
+*.Seteamos Valores para Rad.SIH
+  st_l_sval-tabname   = co_rad_cf.
+  st_l_sval-fieldname = co_sih.
+  st_l_sval-value     = pst_l_solinfo-sih_sol_inf.
+  APPEND st_l_sval TO ti_l_rad.
+  CLEAR st_l_sval.
+
+*.Seteamos Valores para Rad.Mercurio
+  st_l_sval-tabname   = co_rad_cf.
+  st_l_sval-fieldname = co_mer.
+  st_l_sval-value     = pst_l_solinfo-mer_sol_inf.
+  APPEND st_l_sval TO ti_l_rad.
+  CLEAR st_l_sval.
+
+*.Visualización Radicados
+  CALL FUNCTION 'POPUP_GET_VALUES'
+    EXPORTING
+      popup_title     = text-005
+      start_column    = '70'
+      start_row       = '10'
+    IMPORTING
+      returncode      = vl_answer
+    TABLES
+      fields          = ti_l_rad
+    EXCEPTIONS
+      error_in_fields = 1
+      OTHERS          = 2.
+
+  IF sy-subrc NE 0.
+
+*...Mensaje de Error
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+    WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+*.Si ingresó Radicados y dió click en el check
+  CHECK vl_answer IS INITIAL.
+
+*.Ejercicio y Partner
+  st_l_rad_new-gjahr    = so_gjahr-low.
+  st_l_rad_new-partner  = pst_l_solinfo-partner.
+
+*.Recuperamos Valores de los Radicados
+  READ TABLE ti_l_rad INTO st_l_rad INDEX 2.
+  pst_l_solinfo-sih_sol_inf = st_l_rad-value.
+  st_l_rad_new-sih_sol_inf  = st_l_rad-value.
+
+  READ TABLE ti_l_rad INTO st_l_rad INDEX 3.
+  pst_l_solinfo-mer_sol_inf = st_l_rad-value.
+  st_l_rad_new-mer_sol_inf  = st_l_rad-value.
+
+*.Guardamos los Radicados
+  go_cf->save_rad( i_st_rad_new = st_l_rad_new ).
+*.Actualizamos Radicados
+  ti_g_rad = go_cf->get_rad( ).
+
+*.Verificamos Campos
+  PERFORM f_check_fields CHANGING pst_l_solinfo.
+
+ENDFORM.                    " F_CAPTURE_RAD
+
+*&---------------------------------------------------------------------*
+*&      Form  F_CHECK_FIELDS
+*&---------------------------------------------------------------------*
+*       Subrutina encargada de Realizar validaciones sobre los
+*       campos a mostrar en Pantalla
+*----------------------------------------------------------------------*
+*      <--PST_L_SOLINFO  Estructura Solicitud de Información
+*----------------------------------------------------------------------*
+FORM f_check_fields  CHANGING pst_l_solinfo TYPE zst_solinfo_cf.
+
+*.Si no posee E-mail
+  IF pst_l_solinfo-e_mail IS INITIAL.
+
+*...Asignamos icono
+    MOVE co_red_icon TO pst_l_solinfo-icon.
+    EXIT.
+  ENDIF.
+
+*.Si no tiene Radicado SIH
+  IF pst_l_solinfo-sih_sol_inf IS INITIAL.
+
+*...Asignamos icono
+    MOVE co_red_icon TO pst_l_solinfo-icon.
+    EXIT.
+  ENDIF.
+
+*.Si no tiene Radicado Mercurio
+  IF pst_l_solinfo-mer_sol_inf IS INITIAL.
+
+*...Asignamos icono
+    MOVE co_red_icon TO pst_l_solinfo-icon.
+    EXIT.
+  ENDIF.
+
+*.Campos Ok
+  MOVE co_green_icon TO pst_l_solinfo-icon.
+
+ENDFORM.                    " F_CHECK_FIELDS
+
+*&---------------------------------------------------------------------*
+*&      Form  F_SHOW_LOG
+*&---------------------------------------------------------------------*
+*       Muestra Log de Ejecución
+*----------------------------------------------------------------------*
+*      -->PV_ROW  Fila
+*----------------------------------------------------------------------*
+FORM f_show_log  USING pv_row TYPE salv_de_row.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_logx TYPE zst_logx_cf.
+
+*.Declaración de Field Symbols locales
+  FIELD-SYMBOLS:
+    <fs_l_solinfo>  TYPE zst_solinfo_cf.
+
+*.Marcamos Campos a Ocultar
+  MOVE 'X' TO:
+    st_l_logx-mandt,
+    st_l_logx-zconsec,
+    st_l_logx-partner,
+    st_l_logx-tcode.
+
+*.Leemos tabla de entes descentralizados
+  READ TABLE ti_g_solinfo ASSIGNING <fs_l_solinfo> INDEX pv_row.
+  IF sy-subrc EQ 0.
+
+*...Desplegamos Log de Ejecución
+    go_cf->display_log( i_partner = <fs_l_solinfo>-partner
+                        i_st_logx = st_l_logx ).
+  ENDIF.
+
+ENDFORM.                    " F_SHOW_LOG
+
+*&---------------------------------------------------------------------*
+*&      Form  F_PRINT
+*&---------------------------------------------------------------------*
+*       Subrutina encargada de Realizar la Impresión de los Formatos
+*----------------------------------------------------------------------*
+*      -->PTI_L_ROWS  Tabla Interna de Filas
+*----------------------------------------------------------------------*
+FORM f_print  USING  pti_l_rows TYPE salv_t_row.
+
+*.Declaración de Tablas Internas locales
+  DATA:
+    ti_l_marked TYPE mcs01_tab.
+
+*.Mostramos Documentos a Imprimir
+  PERFORM f_show_popup USING    text-008 space
+                       CHANGING ti_l_marked.
+
+*.Verificamos si se Seleccionó un Doc.
+  IF ti_l_marked IS INITIAL. EXIT. ENDIF.
+
+*.Imprimimos Formato
+  PERFORM f_process_print USING pti_l_rows.
+
+*.Optimizar columnas y Refrescamos ALV
+  go_columns = go_table->get_columns( ).
+  go_columns->set_optimize( 'X' ).
+  go_table->refresh( ).
+
+ENDFORM.                    " F_PRINT
+
+*&---------------------------------------------------------------------*
+*&      Form  F_EMAIL
+*&---------------------------------------------------------------------*
+*       Subrutina encargada de Realizar el envío por E-mail de los
+*       Formatos
+*----------------------------------------------------------------------*
+*      -->PTI_L_ROWS  Tabla Interna de Filas
+*----------------------------------------------------------------------*
+FORM f_email  USING  pti_l_rows TYPE salv_t_row.
+
+*.Declaración de Tablas Internas locales
+  DATA:
+    ti_l_marked TYPE mcs01_tab.
+
+*.Mostramos Documentos a Enviar por E-mail
+  PERFORM f_show_popup  USING    text-012 'X'
+                        CHANGING ti_l_marked.
+
+*.Verificamos si se Seleccionó un Doc.
+  IF ti_l_marked IS INITIAL. EXIT. ENDIF.
+
+*.Obtenemos los Doc. a Enviar
+  PERFORM f_get_docs      USING ti_l_marked.
+
+*.Enviamos E-mail
+  PERFORM f_process_email  USING pti_l_rows.
+
+*.Optimizar columnas y Refrescamos ALV
+  go_columns = go_table->get_columns( ).
+  go_columns->set_optimize( 'X' ).
+  go_table->refresh( ).
+
+ENDFORM.                    " F_EMAIL
+
+*&---------------------------------------------------------------------*
+*&      Form  F_SHOW_POPUP
+*&---------------------------------------------------------------------*
+*       Subrutina que Muestra lista de Documentos a ser Impresos
+*       o a ser Enviados por E-mail
+*----------------------------------------------------------------------*
+*      -->PV_TITLE      Titulo
+*      -->PV_FLAG       Visualizar Formato y Resolución
+*      <--PTI_L_MARKED  Tabla Interna de Campos Seleccionados
+*----------------------------------------------------------------------*
+FORM f_show_popup  USING    pv_title      TYPE itex132
+                            pv_flag       TYPE char1
+                   CHANGING pti_l_marked  TYPE mcs01_tab.
+
+*.Declaración de Tablas Internas locales
+  DATA:
+    ti_l_fields TYPE mcs01_tab.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_fields TYPE mcs01.
+
+*.Documento Ley
+  st_l_fields-position  = 0001.
+  st_l_fields-scrtext_s = 'Oficio SIH'(009).
+  st_l_fields-scrtext_m = 'Oficio SIH'(009).
+  st_l_fields-scrtext_l = 'Oficio SIH'(009).
+  APPEND st_l_fields TO ti_l_fields.
+
+*.Visualizar Formato y Resolución
+  IF pv_flag IS NOT INITIAL.
+
+*...Documento Formato Sol.Información
+    st_l_fields-position  = 0002.
+    st_l_fields-scrtext_s = 'Formato'(010).
+    st_l_fields-scrtext_m = 'Formato'(010).
+    st_l_fields-scrtext_l = 'Formato'(010).
+    APPEND st_l_fields TO ti_l_fields.
+
+*...Documento Resolución
+    st_l_fields-position  = 0003.
+    st_l_fields-scrtext_s = 'Resolución'(011).
+    st_l_fields-scrtext_m = 'Resolución'(011).
+    st_l_fields-scrtext_l = 'Resolución'(011).
+    APPEND st_l_fields TO ti_l_fields.
+  ENDIF.
+
+*.Desplegamos Pop Up
+  CALL FUNCTION 'MC_POPUP_TO_MARK_FIELDS'
+    EXPORTING
+      i_fields_marked        = 'X'
+      i_object_name_plural   = 'Formatos'(007)
+      i_object_name_singular = 'Formato'(017)
+      i_popup_title          = pv_title
+    TABLES
+      t_fields               = ti_l_fields
+      t_marked_fields        = pti_l_marked
+    EXCEPTIONS
+      unvalid_text_length    = 1
+      OTHERS                 = 2.
+
+  IF sy-subrc NE 0.
+
+*...Mensaje de Error
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+ENDFORM.                    " F_SHOW_POPUP
+
+*&---------------------------------------------------------------------*
+*&      Form  F_GET_DOCS
+*&---------------------------------------------------------------------*
+*       Subrutina para Determinar y Cargar los Doc. Seleccionados
+*----------------------------------------------------------------------*
+*      -->PTI_L_MARKED  Tabla Interna con Doc.Seleccionados
+*----------------------------------------------------------------------*
+FORM f_get_docs  USING  pti_l_marked TYPE mcs01_tab.
+
+*.Declaración de Tablas Internas locales
+  DATA:
+    ti_l_bin_file TYPE solix_tab.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_marked     TYPE mcs01.
+
+*.Declaración de Variables locales
+  DATA:
+    vl_fname        TYPE tdsfname.
+
+*.Limpiamos Marcación de Docs.
+  CLEAR st_g_docs.
+
+*.Recorremos Opciones Seleccionadas
+  LOOP AT pti_l_marked INTO st_l_marked.
+
+    CASE st_l_marked-position.
+      WHEN 0001.
+
+*.......Obtenemos FM Smartform Ley Sol.Info
+        vl_fname = go_cf->get_fmname( i_formname = co_ley_solinfo ).
+
+*.......Seteamos FM Smartform Ley Sol.Info
+        go_cf->set_fm_ley_solinfo( i_fm_ley_solinfo = vl_fname ).
+
+*.......Marcamos Documento
+        MOVE 'X' TO st_g_docs-ley.
+      WHEN 0002.
+
+*.......Cargar archivo de Formato
+        ti_l_bin_file = go_cf->get_bin_file( i_v_filepath = go_cf->pdf_form_cf ).
+
+*.......Seteamos Binario para Formato Sol.Información
+        go_cf->set_bin_formato( i_ti_bin_file = ti_l_bin_file ).
+
+*.......Marcamos Documento
+        MOVE 'X' TO st_g_docs-form.
+      WHEN 0003.
+
+*.......Cargar archivo de Resolución
+        ti_l_bin_file = go_cf->get_bin_file( i_v_filepath = go_cf->pdf_reso_cf ).
+
+*.......Seteamos Binario para Resolución Sol.Información
+        go_cf->set_bin_resolu( i_ti_bin_file = ti_l_bin_file ).
+
+*.......Marcamos Documento
+        MOVE 'X' TO st_g_docs-reso.
+    ENDCASE.
+
+*...Limpiamos Variables
+    CLEAR:
+      ti_l_bin_file.
+
+  ENDLOOP.
+
+ENDFORM.                    " F_GET_DOCS
+
+*&---------------------------------------------------------------------*
+*&      Form  F_PROCESS_EMAIL
+*&---------------------------------------------------------------------*
+*       Subrutina encarga de enviar los E-mail con los Doc.Adjuntos
+*----------------------------------------------------------------------*
+*      -->PTI_L_ROWS  Filas
+*----------------------------------------------------------------------*
+FORM f_process_email  USING pti_l_rows TYPE salv_t_row.
+
+*.Declaración de Tabla Internas locales
+  DATA:
+    ti_l_body       TYPE soli_tab.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_rows       TYPE int4.
+
+*.Declaración de Field Symbols locales
+  FIELD-SYMBOLS:
+    <fs_l_solinfo>  TYPE zst_solinfo_cf.
+
+*.Seteamos texto para el cuerpo de E-mail
+  go_cf->set_body_solinfo( i_name = co_txt_solinfo ).
+
+*.Obtenemos texto para el cuerpo del Mensaje
+  ti_l_body = go_cf->get_body_solinfo( ).
+
+*.Recorremos registros seleccionados
+  LOOP AT pti_l_rows INTO st_l_rows.
+
+*...Leemos tabla de entes descentralizados
+    READ TABLE ti_g_solinfo ASSIGNING <fs_l_solinfo> INDEX st_l_rows.
+    IF sy-subrc EQ 0.
+
+*.....Enviamos E-mail
+      PERFORM f_send_email  USING ti_l_body
+                            CHANGING <fs_l_solinfo>.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.                    " F_PROCESS_EMAIL
+
+*&---------------------------------------------------------------------*
+*&      Form  F_CHECK_STATUS
+*&---------------------------------------------------------------------*
+*       Verificamos Status de los Registros a Proesar
+*----------------------------------------------------------------------*
+*      <--PTI_L_ROWS  Filas
+*----------------------------------------------------------------------*
+FORM f_check_status  CHANGING pti_l_rows  TYPE salv_t_row.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_rows     TYPE int4,
+    st_l_solinfo  TYPE zst_solinfo_cf.
+
+*.Recorremos Filas Seleccionadas
+  LOOP AT pti_l_rows INTO st_l_rows.
+
+*...Leemos Registro
+    READ TABLE ti_g_solinfo INTO st_l_solinfo INDEX st_l_rows.
+    IF sy-subrc EQ 0.
+
+*.....Status Rojo
+      IF st_l_solinfo-icon EQ co_red_icon.
+
+*.......Descartamos registro
+        DELETE pti_l_rows WHERE table_line = st_l_rows.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.                    " F_CHECK_STATUS
+
+*&---------------------------------------------------------------------*
+*&      Form  F_SEND_EMAIL
+*&---------------------------------------------------------------------*
+*       Subrutina encargada de obtener los adjuntos y contruir el
+*       E-mail para el envío a los entes descentralizados.
+*----------------------------------------------------------------------*
+*      -->PTI_L_BODY      Cuerpo del E-mail
+*      <--PST_L_SOLINFO   Structura Sol.Información
+*----------------------------------------------------------------------*
+FORM f_send_email USING     pti_l_body    TYPE soli_tab
+                  CHANGING  pst_l_solinfo TYPE zst_solinfo_cf.
+
+*.Declaración de Tabla Internas locales
+  DATA:
+    ti_l_attachment TYPE solix_tab,
+    ti_l_resolu     TYPE solix_tab,
+    ti_l_formato    TYPE solix_tab.
+
+*.Decalración de Variables locales
+  DATA:
+    vl_filesize     TYPE i,
+    vl_length       TYPE so_obj_len,
+    vl_ok_send      TYPE os_boolean,
+    vl_bin_pdfx     TYPE xstring.
+
+*.Declaración Objetos de Ref.
+  DATA:
+    lo_exception    TYPE REF TO cx_bcs.
+
+  TRY.
+
+*.....Creamos persistencia para E-mail
+      go_cf->o_send_mail = cl_bcs=>create_persistent( ).
+
+*.....Seteamos opciones del E-mail
+      go_cf->o_doc = cl_document_bcs=>create_document(
+                        i_type    = 'HTM'
+                        i_subject = ''
+                        i_text    = pti_l_body ).
+
+*.....Enviar Doc. Ley?
+      IF st_g_docs-ley IS NOT INITIAL.
+
+*.......Generamos Doc.Ley
+        go_cf->gen_ley_solinfo( EXPORTING i_st_solinfo = pst_l_solinfo
+                                IMPORTING e_v_filesize = vl_filesize
+                                          e_v_bin_pdfx = vl_bin_pdfx ).
+
+*.......Pasamos BIN a HEX y recuperamos longitud
+        ti_l_attachment = cl_document_bcs=>xstring_to_solix( vl_bin_pdfx ).
+        vl_length = vl_filesize.
+
+*.......Adjuntamos Doc.Ley
+        go_cf->o_doc->add_attachment(
+          i_attachment_type     = 'PDF'
+          i_attachment_subject  = text-014
+          i_attachment_size     = vl_length
+          i_att_content_hex     = ti_l_attachment ).
+      ENDIF.
+
+*.....Enviar Doc. Formato?
+      IF st_g_docs-form IS NOT INITIAL.
+
+*.......Recuperamos BIN del Formato
+        ti_l_formato = go_cf->get_bin_formato( ).
+
+*.......Adjuntamos Doc.Formato
+        go_cf->o_doc->add_attachment(
+          i_attachment_type    = 'PDF'
+          i_attachment_subject = text-015
+          i_att_content_hex    = ti_l_formato ).
+      ENDIF.
+
+*.....Enviar Doc. Resolución
+      IF st_g_docs-reso IS NOT INITIAL.
+
+*.......Recuperamos BIN de la Resolución
+        ti_l_resolu = go_cf->get_bin_resolu( ).
+
+*.......Adjuntamos Doc.Resolución
+        go_cf->o_doc->add_attachment(
+          i_attachment_type    = 'PDF'
+          i_attachment_subject = text-016
+          i_att_content_hex    = ti_l_resolu ).
+      ENDIF.
+
+*.....Asignamos Documento a la instancia E-mail
+      go_cf->o_send_mail->set_document( go_cf->o_doc ).
+
+*.....Creamos dirección de E-mail
+      go_cf->o_recipient =
+        cl_cam_address_bcs=>create_internet_address( pst_l_solinfo-e_mail ).
+
+*.....Asignamos dirección de E-mail
+      go_cf->o_send_mail->add_recipient( go_cf->o_recipient ).
+
+*.....Asignamos Asunto de E-mail
+      go_cf->o_send_mail->set_message_subject( go_cf->subj_ccf ).
+
+*.....Enviamos E-mail
+      vl_ok_send = go_cf->o_send_mail->send( i_with_error_screen = 'X' ).
+
+*.....Seteamos Status de Envío
+      PERFORM f_set_status USING    vl_ok_send
+                           CHANGING pst_l_solinfo.
+
+*.....Commit para envío de E-mail
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'.
+
+*.....Limpiamos Variables
+      CLEAR:
+        ti_l_attachment,
+        ti_l_resolu,
+        ti_l_formato,
+        vl_filesize,
+        vl_length,
+        vl_ok_send,
+        vl_bin_pdfx.
+
+*.....Limpiamos Objetos
+      CLEAR:
+        go_cf->o_send_mail,
+        go_cf->o_doc,
+        go_cf->o_recipient.
+
+    CATCH cx_bcs INTO lo_exception.
+
+*.....Error durante el envío -> Returncode: <&>.
+      MESSAGE i865(so) WITH lo_exception->error_type.
+  ENDTRY.
+
+ENDFORM.                    " F_SEND_EMAIL
+
+*&---------------------------------------------------------------------*
+*&      Form  F_SET_STATUS
+*&---------------------------------------------------------------------*
+*       Subrutina que fija el Status de Envío de E-mail y realiza
+*       guardado en Log de ejecucción.
+*----------------------------------------------------------------------*
+*      -->PV_OK_SEND      Indicador de Envío de E-mail
+*      <--PST_L_SOLINFO   Structura Sol.Información
+*----------------------------------------------------------------------*
+FORM f_set_status  USING    pv_ok_send    TYPE os_boolean
+                   CHANGING pst_l_solinfo TYPE zst_solinfo_cf.
+
+  CASE pv_ok_send.
+    WHEN 'X'.
+
+*.....Envío correcto
+      MOVE co_green_light TO pst_l_solinfo-ok_snd.
+
+*.....E-mail Enviado de forma Correcta.
+      go_cf->add_to_log( i_partner  = pst_l_solinfo-partner
+                         i_accion   = 'EMAI'
+                         i_type     = 'S'
+                         i_num      = 006 ).
+    WHEN space.
+
+*.....Envío
+      MOVE co_red_light   TO pst_l_solinfo-ok_snd.
+
+*.....Error al Enviar E-mail.
+      go_cf->add_to_log( i_partner  = pst_l_solinfo-partner
+                         i_accion   = 'EMAI'
+                         i_type     = 'E'
+                         i_num      = 007 ).
+  ENDCASE.
+
+ENDFORM.                    " F_SET_STATUS
+
+*&---------------------------------------------------------------------*
+*&      Form  F_PROCESS_PRINT
+*&---------------------------------------------------------------------*
+*       Subrutina encargada de procesar los datos para la impresión
+*----------------------------------------------------------------------*
+*      -->PTI_L_ROWS  Filas
+*----------------------------------------------------------------------*
+FORM f_process_print  USING pti_l_rows TYPE salv_t_row.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_rows   TYPE int4,
+    st_l_ctrlop TYPE ssfctrlop.
+
+*.Declaración de Variables locales
+  DATA:
+    vl_fname  TYPE rs38l_fnam,
+    vl_subrc  TYPE sysubrc.
+
+*.Declaración de Field Symbols locales
+  FIELD-SYMBOLS:
+    <fs_l_solinfo>  TYPE zst_solinfo_cf.
+
+*.Obtenemos FM Smartform Ley Sol.Info
+  vl_fname = go_cf->get_fmname( i_formname = co_ley_solinfo ).
+
+*.Parámetros de Control
+  st_l_ctrlop-no_open   = 'X' .
+  st_l_ctrlop-no_close  = 'X' .
+
+*.Creamos Orden de Spool
+  PERFORM f_open_spool USING    st_l_ctrlop
+                       CHANGING vl_subrc.
+
+  IF vl_subrc NE 0. EXIT. ENDIF.
+
+*.Recorremos registros seleccionados
+  LOOP AT pti_l_rows INTO st_l_rows.
+
+*...Leemos tabla de entes descentralizados
+    READ TABLE ti_g_solinfo ASSIGNING <fs_l_solinfo> INDEX st_l_rows.
+    IF sy-subrc EQ 0.
+
+*.....Realizamos Impresión
+      PERFORM f_do_print  USING    vl_fname
+                          CHANGING <fs_l_solinfo>.
+    ENDIF.
+  ENDLOOP.
+
+*.Cerramos Orden de Spool
+  PERFORM f_close_spool.
+
+ENDFORM.                    " F_PROCESS_PRINT
+
+*&---------------------------------------------------------------------*
+*&      Form  F_DO_PRINT
+*&---------------------------------------------------------------------*
+*       Subrutina encargada de realizar la impresión de forma masiva
+*       para los Formatos de sol.Información.
+*----------------------------------------------------------------------*
+*      -->PV_FNAME        MF Smartform Sol.Info
+*      <--PST_L_SOLINFO   Structura Sol.Información
+*----------------------------------------------------------------------*
+FORM f_do_print  USING    pv_fname      TYPE rs38l_fnam
+                 CHANGING pst_l_solinfo TYPE zst_solinfo_cf.
+
+*.Declaración de Estructuras locales
+  DATA:
+    st_l_ctrlop   TYPE ssfctrlop.
+
+*.Parámetros de Control
+  st_l_ctrlop-no_open   = 'X' .
+  st_l_ctrlop-no_close  = 'X' .
+
+*.Generamos Smartform Sol.Información
+  CALL FUNCTION pv_fname
+    EXPORTING
+      control_parameters = st_l_ctrlop
+      i_st_solinfo       = pst_l_solinfo
+    EXCEPTIONS
+      formatting_error   = 1
+      internal_error     = 2
+      send_error         = 3
+      user_canceled      = 4
+      OTHERS             = 5.
+
+  IF sy-subrc EQ 0.
+
+*...Impresión correcta
+    MOVE co_green_light TO pst_l_solinfo-ok_snd.
+
+*...Impresión de forma Correcta.
+    go_cf->add_to_log( i_partner  = pst_l_solinfo-partner
+                       i_accion   = 'IMPR'
+                       i_type     = 'S'
+                       i_num      = 008 ).
+
+  ELSE.
+
+*...Impresión Incorrecta
+    MOVE co_red_light   TO pst_l_solinfo-ok_snd.
+
+*...Error al Imprimir.
+    go_cf->add_to_log( i_partner  = pst_l_solinfo-partner
+                       i_accion   = 'IMPR'
+                       i_type     = sy-msgty
+                       i_id       = sy-msgid
+                       i_num      = sy-msgno
+                       i_arg1     = sy-msgv1
+                       i_arg2     = sy-msgv2
+                       i_arg3     = sy-msgv3
+                       i_arg4     = sy-msgv4 ).
+  ENDIF.
+
+ENDFORM.                    " F_DO_PRINT
+
+*&---------------------------------------------------------------------*
+*&      Form  F_OPEN_SPOOL
+*&---------------------------------------------------------------------*
+*       Subrutina encargada de crear una Orden de Spool nueva.
+*----------------------------------------------------------------------*
+*      -->PST_L_CTRLOP  Structura Sol.Información
+*      <--PV_SUBRC      Código de Retorno
+*----------------------------------------------------------------------*
+FORM f_open_spool  USING    pst_l_ctrlop  TYPE ssfctrlop
+                   CHANGING pv_subrc      TYPE sysubrc.
+
+*.Creamos Orden de Spool
+  CALL FUNCTION 'SSF_OPEN'
+    EXPORTING
+      control_parameters = pst_l_ctrlop
+    EXCEPTIONS
+      formatting_error   = 1
+      internal_error     = 2
+      send_error         = 3
+      user_canceled      = 4
+      OTHERS             = 5.
+
+*.Código de Retorno
+  MOVE sy-subrc TO pv_subrc.
+
+  IF sy-subrc NE 0.
+
+*...Mensaje de Error
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+ENDFORM.                    " F_OPEN_SPOOL
+
+*&---------------------------------------------------------------------*
+*&      Form  F_CLOSE_SPOOL
+*&---------------------------------------------------------------------*
+*       Subrutina encargada de Cerrar la Orden de Spool creada
+*       previamente.
+*----------------------------------------------------------------------*
+FORM f_close_spool.
+
+*.Cerramos Orden de Spool
+  CALL FUNCTION 'SSF_CLOSE'
+    EXCEPTIONS
+      formatting_error = 1
+      internal_error   = 2
+      send_error       = 3
+      OTHERS           = 4.
+
+  IF sy-subrc NE 0.
+
+*...Mensaje de Error
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+ENDFORM.                    " F_CLOSE_SPOOL
