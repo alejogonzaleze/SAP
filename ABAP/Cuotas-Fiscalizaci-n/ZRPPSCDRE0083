@@ -1,0 +1,22 @@
+REPORT  zrppscdre0083 MESSAGE-ID zrm_cf.
+
+*----------------------------------------------------------------------*
+*.Definición Includes
+*----------------------------------------------------------------------*
+INCLUDE:
+  <icon>,           " Include de Iconos
+  zrppscdre0083_v,  " Include de Variables
+  zrppscdre0083_c,  " Include de Clases locales
+  zrppscdre0083_f.  " Include de Subrutinas
+
+*----------------------------------------------------------------------
+* Evento: START-OF-SELECTION
+*----------------------------------------------------------------------
+START-OF-SELECTION.
+  PERFORM f_start_of_selection.
+
+*----------------------------------------------------------------------*
+* Evento: END-OF-SELECTION
+*----------------------------------------------------------------------*
+END-OF-SELECTION.
+  PERFORM f_end_of_selection.
