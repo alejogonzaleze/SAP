@@ -1,0 +1,81 @@
+*----------------------------------------------------------------------*
+* Definición de Tipos Globales
+*----------------------------------------------------------------------*
+  TYPES:
+
+*...Tipo para Parámetros
+    BEGIN OF gty_param,
+      gjahr	TYPE gjahr,     " Periodo
+      nit   TYPE bu_sort2,  " Nro.ID Contribuyente
+    END OF gty_param,
+
+    BEGIN OF gty_docs,
+      ley   TYPE os_boolean,  " Ley
+      form  TYPE os_boolean,  " Formato
+      reso  TYPE os_boolean,  " Resolución
+    END OF gty_docs.
+
+*----------------------------------------------------------------------*
+* Declaración de Tablas Internas Globales
+*----------------------------------------------------------------------*
+  DATA:
+    ti_g_data     TYPE ztt_cf_data,
+    ti_g_rad      TYPE ztt_rad_cf,
+    ti_g_solinfo  TYPE ztt_solinfo_cf.
+
+*----------------------------------------------------------------------*
+* Declaración de Estructuras Globales
+*----------------------------------------------------------------------*
+  DATA:
+    st_g_param  TYPE gty_param,
+    st_g_docs   TYPE gty_docs.
+
+*----------------------------------------------------------------------*
+* Definición de Objetos de Refrencia
+*----------------------------------------------------------------------*
+  DATA:
+*...Declaración Cuota de Fiscalización
+    go_cf         TYPE REF TO zcl_rm_cf,
+*...Objeto referencia cl_salv_table
+    go_table      TYPE REF TO cl_salv_table,
+*...Setear propiedades tecnicas columnas
+    go_columns    TYPE REF TO cl_salv_columns_table,
+*...Setear propiedades tecnicas columnas
+    go_column     TYPE REF TO cl_salv_column_table,
+*...Manejo de layout
+    go_layout     TYPE REF TO cl_salv_layout,
+*...Manejo de funciones
+    go_functions  TYPE REF TO cl_salv_functions,
+*...Manejo de eventos
+    go_events     TYPE REF TO cl_salv_events_table,
+*...Selecciones
+    go_sel        TYPE REF TO cl_salv_selections.
+
+*----------------------------------------------------------------------*
+*.Declaración de Constantes locales
+*----------------------------------------------------------------------*
+  CONSTANTS:
+    co_green_icon   TYPE char4    VALUE '@5B@',       " Green light
+    co_red_icon     TYPE char4    VALUE '@5C@',       " Red light
+    co_log_icon     TYPE char4    VALUE '@0P@',       " Display text
+    co_green_light  TYPE char4    VALUE '@08@',       " Green light
+    co_yellow_light TYPE char4    VALUE '@09@',       " Yellow light
+    co_red_light    TYPE char4    VALUE '@0A@',       " Red light
+    co_ley_solinfo  TYPE tdsfname VALUE 'ZFRM_CF_1',  " Smart.Ley.Solinf
+    co_txt_solinfo  TYPE tdobname VALUE 'ZSOLINFO_CF'." Txt.Solinfo
+
+*----------------------------------------------------------------------*
+* Parámetros de Selección
+*----------------------------------------------------------------------*
+  SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+
+*.Parámetros de Selección
+  SELECT-OPTIONS:
+
+*...Periodo
+    so_gjahr  FOR st_g_param-gjahr  OBLIGATORY NO-EXTENSION NO INTERVALS
+                                    MATCHCODE OBJECT zica_om_year,
+*...Nit
+    so_nits   FOR st_g_param-nit    NO INTERVALS.
+
+  SELECTION-SCREEN END OF BLOCK b1.
