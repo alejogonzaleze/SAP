@@ -1,0 +1,45 @@
+*----------------------------------------------------------------------*
+*.Predefine una clase local para permitir la manipulación del evento
+*.Declaración de una variable de referencia antes de que la clase sea
+*.definida
+  CLASS lcl_handle_events DEFINITION DEFERRED.
+
+*----------------------------------------------------------------------*
+* Definición de Variables de Referencia
+*----------------------------------------------------------------------*
+  DATA:
+*...Objeto para manejo de eventos de cl_salv_table
+    event_handler TYPE REF TO lcl_handle_events.
+
+*---------------------------------------------------------------------*
+*       CLASS lcl_handle_events DEFINITION
+*---------------------------------------------------------------------*
+*       Define clase local para eventos de cl_salv_table
+*---------------------------------------------------------------------*
+  CLASS lcl_handle_events DEFINITION.
+
+    PUBLIC SECTION.
+      METHODS:
+        on_user_command FOR EVENT added_function OF cl_salv_events
+          IMPORTING e_salv_function,
+        on_link_click FOR EVENT link_click OF cl_salv_events_table
+          IMPORTING row column.
+
+  ENDCLASS.                    "lcl_handle_events DEFINITION
+
+*---------------------------------------------------------------------*
+*       CLASS lcl_handle_events IMPLEMENTATION
+*---------------------------------------------------------------------*
+*       Implementa los eventos de cl_salv_table
+*---------------------------------------------------------------------*
+  CLASS lcl_handle_events IMPLEMENTATION.
+
+    METHOD on_user_command.
+      PERFORM f_user_command USING e_salv_function.
+    ENDMETHOD.                    "on_user_command
+
+    METHOD on_link_click.
+      PERFORM f_click_action USING row column.
+    ENDMETHOD.                    "on_link_click
+
+  ENDCLASS.                    "lcl_handle_events IMPLEMENTATION
