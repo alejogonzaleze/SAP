@@ -1,0 +1,21 @@
+DATA: lt_flight     TYPE STANDARD TABLE OF sflight,
+      lt_flight_new TYPE STANDARD TABLE OF sflight,
+      lrf_descr     TYPE REF TO cl_abap_typedescr,
+      lv_json       TYPE string.
+
+** Consulta base.
+SELECT * FROM sflight INTO TABLE lt_flight.
+
+** Serialización.
+call method cl_fdt_json=>data_to_json
+  exporting
+    ia_data = lt_flight
+  receiving
+    rv_json = lv_json.
+
+** Deserialización.
+call method cl_fdt_json=>json_to_data
+  exporting
+    iv_json = lv_json
+  changing
+    ca_data = lt_flight_new.
