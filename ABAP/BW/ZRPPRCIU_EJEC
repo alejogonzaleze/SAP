@@ -1,0 +1,119 @@
+*=======================================================
+* REPORTE ACTUALIZACIÓN DE DATOS BW
+*
+* DESCRIPCION: REPORTE ACTUALIZACIÓN DE DATOS BW
+* ANALISTA:    ALEJANDRO GONZALEZ ESTRADA (SELECTA CONSULTING GROUP)
+* PROGRAMADOR: ALEJANDRO GONZALEZ ESTRADA (SELECTA CONSULTING GROUP)
+*--------------------------------------------------------------------------------------------------------------
+* LOG DE MODIFICACION:
+*--------------------------------------------------------------------------------------------------------------
+* FECHA 08/10/2013
+* PROGRAMADOR: ALEJANDRO GONZALEZ ESTRADA
+* CORRECCION:  DBWK905998
+* ARANDA:      323198
+* DESCRIPCION: DESARROLLO INICIAL.
+*--------------------------------------------------------------------------------------------------------------
+* FECHA 02/06/2015
+* PROGRAMADOR: JUAN FERNANDO MONTOYA
+* CORRECCION:  DBWK906238
+* ARANDA:      1253
+* DESCRIPCION: ADICION DE PARAMETRO PARA CARGAR LOS DATOS AL APLICATIVO.
+*--------------------------------------------------------------------------------------------------------------
+
+
+** Objetos de Autorización **********************************************
+** Las autorizaciones se validarán a través de la transacción  **
+*************************************************************************
+
+REPORT  zrppriu_ejec.
+
+* Definicion de Variables
+DATA:
+  lv_cadena TYPE rspc_chain.
+
+** Pantalla de selección de parámetros del reporte.
+SELECTION-SCREEN BEGIN OF BLOCK blk01 WITH FRAME TITLE text-001.
+PARAMETERS: pa_maes AS CHECKBOX,
+            pa_data AS CHECKBOX,
+            pa_app  AS CHECKBOX.
+SELECTION-SCREEN END OF BLOCK blk01.
+
+START-OF-SELECTION.
+
+* Valida que se seleccione al menos una de las 3 opciones, sino no ejecuta
+  IF pa_maes IS INITIAL AND pa_data IS INITIAL AND pa_app IS INITIAL.
+    MESSAGE i001(zbw_mensajes).
+    RETURN.
+  ENDIF.
+
+* Coloca el texto indicando que va comenzar la ejecucion
+  CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+    EXPORTING
+      percentage = 10
+      text       = 'Preparando Ejecución'.
+
+* Ejecuta el proceso de Carga de la Cadena de Datos Maestros
+  IF pa_maes = 'X'.
+    lv_cadena = 'ZPC_EJEC_DATOS_MAESTROS'.
+    PERFORM f_start_chain USING lv_cadena.
+  ENDIF.
+
+* Ejecuta el proceso de Carga de la Cadena de Datos Transaccionales
+  IF pa_data = 'X'.
+    lv_cadena = 'ZPC_EJEC_DATOS_TRANSA'.
+    PERFORM f_start_chain USING lv_cadena.
+  ENDIF.
+
+* Ejecuta el proceso de Carga de la Cadena de Datos para Sigamos Medellin
+  IF pa_app = 'X'.
+    lv_cadena = 'ZPC_EJEC_DATOS_APP'.
+    PERFORM f_start_chain USING lv_cadena.
+  ENDIF.
+
+* Cambia el Mensaje indicado que la carga terminó
+  MESSAGE i000(zbw_mensajes) WITH 'Ejecución finalizada'.
+
+END-OF-SELECTION.
+
+*&---------------------------------------------------------------------*
+*&      Form  F_START_CHAIN
+*&---------------------------------------------------------------------*
+*       Subrutina encargada de Ejecutar una Cadena de Procesos
+*----------------------------------------------------------------------*
+*      -->PV_CADENA  Nombre de la Cadena de Procesos
+*----------------------------------------------------------------------*
+FORM f_start_chain  USING pv_cadena TYPE rspc_chain.
+
+  DATA:
+    lv_lid    TYPE rspc_logid,
+    lv_status TYPE rspc_state.
+
+  CALL FUNCTION 'RSPC_API_CHAIN_START'
+    EXPORTING
+      i_chain = pv_cadena
+    IMPORTING
+      e_logid = lv_lid.
+
+*   Valida que la Cadena termine
+  IF sy-subrc = 0.
+    lv_status = 'A'.
+    WHILE lv_status = 'A'.
+
+      CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+        EXPORTING
+          percentage = 80
+          text       = 'En proceso ejecución'.
+
+      CALL FUNCTION 'RSPC_API_CHAIN_GET_STATUS'
+        EXPORTING
+          i_chain  = pv_cadena
+          i_logid  = lv_lid
+        IMPORTING
+          e_status = lv_status.
+      IF lv_status = 'A'.
+        WAIT UP TO 60 SECONDS.
+      ENDIF.
+    ENDWHILE.
+  ENDIF.
+
+ENDFORM.                    " F_START_CHAIN
