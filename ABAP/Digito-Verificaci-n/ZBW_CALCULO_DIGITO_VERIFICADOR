@@ -1,0 +1,29 @@
+FUNCTION zbw_calculo_digito_verificador.
+*"----------------------------------------------------------------------
+*"*"Interfase local
+*"  IMPORTING
+*"     REFERENCE(P_NRDOCTO) TYPE  ZNR_DOCUM
+*"  EXPORTING
+*"     REFERENCE(P_DIGITOV) TYPE  ZDIGIT_V
+*"----------------------------------------------------------------------
+  DO 10 TIMES.
+    vc_num = vn_num.
+    CONCATENATE p_nrdocto vc_num INTO vc_cod.
+    CONDENSE vc_cod.
+    CALL FUNCTION 'TAX_NUMBER_CHECK'
+      EXPORTING
+        country             = 'CO'
+        natural_person_flag = ' '
+        tax_code_1          = vc_cod
+      EXCEPTIONS
+        not_valid           = 1
+        different_fprcd     = 2
+        OTHERS              = 3.
+    IF sy-subrc = 0.
+      MOVE vc_num TO p_digitov.
+      EXIT.
+    ELSE.
+      vn_num = vn_num + 1.
+    ENDIF.
+  ENDDO.
+ENDFUNCTION.
